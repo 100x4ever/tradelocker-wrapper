@@ -211,6 +211,33 @@ app.get('/api/positions', async (req, res) => {
   }
 });
 
+// Proxy endpoint to modify position (TP/SL)
+app.patch('/api/positions/:positionId', async (req, res) => {
+  const { positionId } = req.params;
+  const { accountType, accNum, stopLoss, takeProfit } = req.body;
+  const authHeader = req.headers['authorization'];
+
+  try {
+    const baseUrl = getBaseUrl(accountType);
+    const response = await axios.patch(`${baseUrl}/trade/positions/${positionId}`, {
+      stopLoss: stopLoss !== undefined ? stopLoss : null,
+      takeProfit: takeProfit !== undefined ? takeProfit : null
+    }, {
+      headers: {
+        'Authorization': authHeader,
+        'accNum': accNum || '0',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    });
+    res.json(response.data);
+  } catch (error) {
+    console.error('Modify position error:', error.message);
+    const status = error.response ? error.response.status : 500;
+    res.status(status).json({ error: 'Failed to modify position', details: error.response?.data || error.message });
+  }
+});
+
 // Proxy endpoint to get state/balance
 app.get('/api/state', async (req, res) => {
   const { accountType, accountId, accNum } = req.query;

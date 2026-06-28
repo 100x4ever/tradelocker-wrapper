@@ -2,19 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createChart } from 'lightweight-charts';
 import { 
   TrendingUp, 
-  ShieldAlert, 
   Lock, 
-  User, 
   Settings, 
   Activity, 
   CheckCircle, 
   Play, 
   Square,
-  DollarSign,
   TrendingDown,
   Layers,
   BarChart3,
-  HelpCircle
+  MousePointerClick
 } from 'lucide-react';
 
 export default function App() {
@@ -51,6 +48,9 @@ export default function App() {
   const [autoTradeEnabled, setAutoTradeEnabled] = useState(false);
   const [positions, setPositions] = useState([]);
   const [currentPrice, setCurrentPrice] = useState(null);
+  
+  // Interactivity Dragging State
+  const [draggingLine, setDraggingLine] = useState(null); // { type: 'tp' | 'sl', initialPrice: number }
 
   // Log / Message Feed
   const [logs, setLogs] = useState([]);
@@ -69,6 +69,11 @@ export default function App() {
   const fib236SeriesRef = useRef(null);
   const fib500SeriesRef = useRef(null);
   const fib618SeriesRef = useRef(null);
+
+  // Position Price Lines Refs
+  const entryPriceLineRef = useRef(null);
+  const tpPriceLineRef = useRef(null);
+  const slPriceLineRef = useRef(null);
 
   // Bottom Series References
   const volumeSeriesRef = useRef(null);
@@ -126,7 +131,7 @@ export default function App() {
     }
   };
 
-  // Fetch TradeLocker Config (for account details indices mapping)
+  // Fetch TradeLocker Config
   const fetchConfig = async (jwtToken) => {
     try {
       const res = await fetch(`/api/config?accountType=${accountType}&accNum=0`, {
@@ -137,7 +142,6 @@ export default function App() {
         setConfig(data);
         addLog('System configuration loaded.');
       }
-      // Load accounts after config is retrieved
       fetchAccounts(jwtToken, data);
     } catch (err) {
       addLog(`Failed to fetch config: ${err.message}`);
@@ -178,14 +182,12 @@ export default function App() {
       const activeConfig = currentConfig || config;
       if (data && data.d && data.d.accountDetailsData) {
         const arr = data.d.accountDetailsData;
-        // Robust fallback based on standard TradeLocker index mapping
         const mappedState = {
           balance: arr[0] !== undefined ? arr[0] : 0,
           equity: arr[1] !== undefined ? arr[1] : 0,
           openPnL: arr[22] !== undefined ? arr[22] : (arr[5] !== undefined ? arr[5] : 0)
         };
 
-        // Apply dynamic config mapping if loaded successfully
         if (activeConfig && activeConfig.accountDetailsConfig) {
           const cols = activeConfig.accountDetailsConfig.columns;
           cols.forEach((col, index) => {
@@ -213,7 +215,6 @@ export default function App() {
       if (data && data.d && data.d.positions) {
         const parsedPositions = data.d.positions.map(posArr => {
           const instId = posArr[1];
-          // Find symbol in instruments list to display human readable name
           const instrumentObj = instruments.find(inst => 
             String(inst.tradableInstrumentId) === String(instId) || String(inst.id) === String(instId)
           );
@@ -225,9 +226,10 @@ export default function App() {
             symbol: symbolName,
             side: posArr[3],
             qty: posArr[4],
-            price: posArr[5],
-            stopLoss: posArr[6],
-            takeProfit: posArr[7],
+            price: parseFloat(posArr[5]),
+            stopLoss: posArr[6] ? parseFloat(posArr[6]) : null,
+            takeProfit: posArr[7] ? parseFloat(posArr[7]) : null,
+            time: posArr[8],
             pnl: posArr[9]
           };
         });
@@ -271,20 +273,15 @@ export default function App() {
 
     if (!entryPrice) return { tpPrice, slPrice };
 
-    // 1. Absolute Price Mode (USD / Asset price)
     if (tpSlMode === 'price') {
       if (tpValue) tpPrice = parseFloat(tpValue);
       if (slValue) slPrice = parseFloat(slValue);
     } 
-    // 2. USD Profit/Loss Amount Mode
     else if (tpSlMode === 'usd_amount') {
-      // Approximate contract calculation
-      // Standard contract size is 100,000 for FX, 1 for Indices/Crypto.
       const isForex = selectedInstrument?.name.includes('/') || selectedInstrument?.name.length === 6;
       const contractSize = isForex ? 100000 : 1; 
       const parsedLot = parseFloat(lotSize) || 0.01;
       
-      // Change in price = Target USD / (LotSize * ContractSize)
       const priceDiffTp = tpValue ? (parseFloat(tpValue) / (parsedLot * contractSize)) : null;
       const priceDiffSl = slValue ? (parseFloat(slValue) / (parsedLot * contractSize)) : null;
 
@@ -295,7 +292,6 @@ export default function App() {
         slPrice = side === 'buy' ? entryPrice - priceDiffSl : entryPrice + priceDiffSl;
       }
     }
-    // 3. Pips Mode
     else if (tpSlMode === 'pips') {
       const pipSize = selectedInstrument?.name.includes('JPY') ? 0.01 : 0.0001;
       const priceDiffTp = tpValue ? (parseFloat(tpValue) * pipSize) : null;
@@ -340,7 +336,7 @@ export default function App() {
           tradableInstrumentId: selectedInstrument.id,
           symbol: selectedInstrument.name,
           lotSize,
-          tpPips: tpSlMode === 'pips' ? tpValue : 0, // Fallback pips definition for simple backend trigger
+          tpPips: tpSlMode === 'pips' ? tpValue : 0,
           slPips: tpSlMode === 'pips' ? slValue : 0,
           enabled: nextState
         })
@@ -522,7 +518,7 @@ export default function App() {
     const fetchHistoryAndRender = async () => {
       try {
         const toMs = Date.now();
-        const fromMs = toMs - (24 * 60 * 60 * 5 * 1000); // 5 days of history in MILLISECONDS
+        const fromMs = toMs - (24 * 60 * 60 * 5 * 1000); // 5 days of history
 
         const infoRoute = selectedInstrument.routes?.find(r => r.type === 'INFO');
         const routeIdVal = infoRoute ? infoRoute.id : 0;
@@ -549,7 +545,6 @@ export default function App() {
         const calculated = calculateIndicators(rawBars);
         if (!calculated) return;
 
-        // Save current price
         const latestClose = calculated.candles[calculated.candles.length - 1].close;
         setCurrentPrice(latestClose);
 
@@ -737,6 +732,182 @@ export default function App() {
       }
     };
   }, [selectedInstrument, resolution, token]);
+
+  // Effect to draw and manage entry, TP, and SL price lines on the chart
+  useEffect(() => {
+    if (!selectedInstrument || !candleSeriesRef.current || !mainChartRef.current) return;
+
+    // Find active position for the selected instrument
+    const targetId = selectedInstrument.tradableInstrumentId || selectedInstrument.id;
+    const activePos = positions.find(p => 
+      String(p.tradableInstrumentId) === String(targetId)
+    );
+
+    // Clean up old lines first
+    if (entryPriceLineRef.current) {
+      candleSeriesRef.current.removePriceLine(entryPriceLineRef.current);
+      entryPriceLineRef.current = null;
+    }
+    if (tpPriceLineRef.current) {
+      candleSeriesRef.current.removePriceLine(tpPriceLineRef.current);
+      tpPriceLineRef.current = null;
+    }
+    if (slPriceLineRef.current) {
+      candleSeriesRef.current.removePriceLine(slPriceLineRef.current);
+      slPriceLineRef.current = null;
+    }
+
+    if (activePos) {
+      // 1. Draw Entry Line
+      entryPriceLineRef.current = candleSeriesRef.current.createPriceLine({
+        price: activePos.price,
+        color: '#3b82f6', // Blue
+        lineWidth: 2,
+        lineStyle: 2, // Dashed
+        title: `Entry: ${activePos.price}`,
+        axisLabelVisible: true,
+      });
+
+      // 2. Draw Take Profit Line
+      if (activePos.takeProfit) {
+        tpPriceLineRef.current = candleSeriesRef.current.createPriceLine({
+          price: activePos.takeProfit,
+          color: '#10b981', // Green
+          lineWidth: 2,
+          lineStyle: 0, // Solid
+          title: `TP: ${activePos.takeProfit} (Drag)`,
+          axisLabelVisible: true,
+        });
+      }
+
+      // 3. Draw Stop Loss Line
+      if (activePos.stopLoss) {
+        slPriceLineRef.current = candleSeriesRef.current.createPriceLine({
+          price: activePos.stopLoss,
+          color: '#ef4444', // Red
+          lineWidth: 2,
+          lineStyle: 0, // Solid
+          title: `SL: ${activePos.stopLoss} (Drag)`,
+          axisLabelVisible: true,
+        });
+      }
+
+      // Mark the entry candle
+      if (activePos.time) {
+        const entryTimeSeconds = Math.floor(parseInt(activePos.time) / 1000);
+        candleSeriesRef.current.setMarkers([
+          {
+            time: entryTimeSeconds,
+            position: 'belowBar',
+            color: '#eab308', // Yellow
+            shape: 'arrowUp',
+            text: `Entry`
+          }
+        ]);
+      }
+    } else {
+      candleSeriesRef.current.setMarkers([]);
+    }
+  }, [positions, selectedInstrument]);
+
+  // Handle Dragging Logic for TP/SL Lines
+  useEffect(() => {
+    if (!draggingLine || !selectedInstrument || !selectedAccount || !candleSeriesRef.current) return;
+
+    const targetId = selectedInstrument.tradableInstrumentId || selectedInstrument.id;
+    const activePos = positions.find(p => String(p.tradableInstrumentId) === String(targetId));
+    if (!activePos) return;
+
+    const handleMouseMove = (e) => {
+      const rect = mainChartContainerRef.current.getBoundingClientRect();
+      const y = e.clientY - rect.top;
+      const currentPrice = candleSeriesRef.current.coordinateToPrice(y);
+      if (!currentPrice) return;
+
+      // Update line position visually in real-time
+      if (draggingLine.type === 'tp' && tpPriceLineRef.current) {
+        tpPriceLineRef.current.applyOptions({ 
+          price: currentPrice, 
+          title: `TP: ${currentPrice.toFixed(5)} (Release to save)` 
+        });
+      } else if (draggingLine.type === 'sl' && slPriceLineRef.current) {
+        slPriceLineRef.current.applyOptions({ 
+          price: currentPrice, 
+          title: `SL: ${currentPrice.toFixed(5)} (Release to save)` 
+        });
+      }
+    };
+
+    const handleMouseUp = async (e) => {
+      const rect = mainChartContainerRef.current.getBoundingClientRect();
+      const y = e.clientY - rect.top;
+      const finalPrice = parseFloat(candleSeriesRef.current.coordinateToPrice(y).toFixed(5));
+      
+      setDraggingLine(null);
+
+      if (finalPrice) {
+        addLog(`Modifying ${draggingLine.type.toUpperCase()} level to ${finalPrice}...`);
+        try {
+          const res = await fetch(`/api/positions/${activePos.id}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              accountType,
+              accNum: selectedAccount.accNum,
+              takeProfit: draggingLine.type === 'tp' ? finalPrice : activePos.takeProfit,
+              stopLoss: draggingLine.type === 'sl' ? finalPrice : activePos.stopLoss
+            })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            addLog(`${draggingLine.type.toUpperCase()} modified successfully on TradeLocker.`);
+            fetchPositions(token, selectedAccount);
+          } else {
+            addLog(`Failed to modify position: ${data.details?.errmsg || data.error}`);
+          }
+        } catch (err) {
+          addLog(`Error modifying position: ${err.message}`);
+        }
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [draggingLine, positions, selectedInstrument, selectedAccount]);
+
+  // Hook mouse down event on chart container to initiate drag
+  const handleChartMouseDown = (e) => {
+    if (!selectedInstrument || !candleSeriesRef.current) return;
+    const targetId = selectedInstrument.tradableInstrumentId || selectedInstrument.id;
+    const activePos = positions.find(p => String(p.tradableInstrumentId) === String(targetId));
+    if (!activePos) return;
+
+    const rect = mainChartContainerRef.current.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const clickedPrice = candleSeriesRef.current.coordinateToPrice(y);
+    if (!clickedPrice) return;
+
+    // Check click proximity (within 1.5% tolerance)
+    const tpPrice = activePos.takeProfit;
+    const slPrice = activePos.stopLoss;
+    const tolerance = clickedPrice * 0.015;
+
+    if (tpPrice && Math.abs(clickedPrice - tpPrice) < tolerance) {
+      setDraggingLine({ type: 'tp', initialPrice: tpPrice });
+      addLog('Dragging Take Profit (TP) line...');
+    } else if (slPrice && Math.abs(clickedPrice - slPrice) < tolerance) {
+      setDraggingLine({ type: 'sl', initialPrice: slPrice });
+      addLog('Dragging Stop Loss (SL) line...');
+    }
+  };
 
   const filteredInstruments = instruments.filter(inst => 
     inst.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -1089,7 +1260,11 @@ export default function App() {
             {/* Chart Area */}
             <div className="flex-1 flex flex-col gap-2">
               <div className="w-full relative bg-[#0f111a] rounded-lg overflow-hidden border border-slate-900">
-                <div ref={mainChartContainerRef} className="w-full"></div>
+                <div 
+                  ref={mainChartContainerRef} 
+                  className="w-full cursor-row-resize"
+                  onMouseDown={handleChartMouseDown}
+                ></div>
                 <div ref={bottomChartContainerRef} className="w-full border-t border-slate-900"></div>
 
                 {!isLoggedIn && (
@@ -1132,6 +1307,9 @@ export default function App() {
                 <span className="w-2.5 h-1 bg-gradient-to-r from-yellow-500 via-blue-500 to-white rounded"></span>
                 Stochastics (14, 40, 60)
               </div>
+              <div className="indicator-tag text-indigo-400 font-semibold">
+                <MousePointerClick size={12} /> Click & Drag TP / SL Lines to Modify
+              </div>
             </div>
           </div>
 
@@ -1150,13 +1328,18 @@ export default function App() {
               ) : (
                 <div className="flex flex-col gap-2">
                   {positions.map(pos => (
-                    <div key={pos.id || pos.positionId} className="flex items-center justify-between p-2.5 bg-slate-900/60 rounded border border-slate-800/80 text-xs">
+                    <div key={pos.id} className="flex items-center justify-between p-2.5 bg-slate-900/60 rounded border border-slate-800/80 text-xs">
                       <div>
                         <span className={`font-bold mr-1.5 uppercase ${pos.side === 'buy' ? 'text-emerald-500' : 'text-red-500'}`}>
                           {pos.side}
                         </span>
                         <span className="font-semibold text-slate-200">{pos.symbol || 'Instrument'}</span>
                         <div className="text-[10px] text-slate-500">Qty: {pos.qty} | Price: {pos.price}</div>
+                        {(pos.takeProfit || pos.stopLoss) && (
+                          <div className="text-[9px] text-violet-400">
+                            {pos.takeProfit ? `TP: ${pos.takeProfit}` : ''} {pos.stopLoss ? `| SL: ${pos.stopLoss}` : ''}
+                          </div>
+                        )}
                       </div>
                       <div className="text-right">
                         <span className={`font-bold ${(pos.pnl || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
