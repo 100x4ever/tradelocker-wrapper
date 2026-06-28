@@ -214,7 +214,9 @@ export default function App() {
         const parsedPositions = data.d.positions.map(posArr => {
           const instId = posArr[1];
           // Find symbol in instruments list to display human readable name
-          const instrumentObj = instruments.find(inst => String(inst.id) === String(instId));
+          const instrumentObj = instruments.find(inst => 
+            String(inst.tradableInstrumentId) === String(instId) || String(inst.id) === String(instId)
+          );
           const symbolName = instrumentObj ? instrumentObj.name : `Instrument #${instId}`;
 
           return {
@@ -382,8 +384,8 @@ export default function App() {
           side,
           type: orderType,
           price: orderType === 'market' ? 0 : priceToUse,
-          tradableInstrumentId: selectedInstrument.id,
-          routeId: selectedInstrument.routes?.TRADE || 0,
+          tradableInstrumentId: selectedInstrument.tradableInstrumentId || selectedInstrument.id,
+          routeId: selectedInstrument.routes?.find(r => r.type === 'TRADE')?.id || 0,
           takeProfit: tpPrice,
           stopLoss: slPrice
         })
@@ -522,9 +524,12 @@ export default function App() {
         const toMs = Date.now();
         const fromMs = toMs - (24 * 60 * 60 * 5 * 1000); // 5 days of history in MILLISECONDS
 
-        const routeIdVal = selectedInstrument.routes?.INFO || 0;
+        const infoRoute = selectedInstrument.routes?.find(r => r.type === 'INFO');
+        const routeIdVal = infoRoute ? infoRoute.id : 0;
+        const targetInstrumentId = selectedInstrument.tradableInstrumentId || selectedInstrument.id;
+        
         const res = await fetch(
-          `/api/history?accountType=${accountType}&resolution=${resolution}&from=${fromMs}&to=${toMs}&tradableInstrumentId=${selectedInstrument.id}&accNum=${selectedAccount?.accNum || '0'}&routeId=${routeIdVal}`,
+          `/api/history?accountType=${accountType}&resolution=${resolution}&from=${fromMs}&to=${toMs}&tradableInstrumentId=${targetInstrumentId}&accNum=${selectedAccount?.accNum || '0'}&routeId=${routeIdVal}`,
           { headers: { 'Authorization': `Bearer ${token}` } }
         );
         const data = await res.json();
