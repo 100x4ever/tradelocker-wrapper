@@ -41,7 +41,7 @@ export default function App() {
   const [limitPrice, setLimitPrice] = useState('');
   
   // TP & SL Settings
-  const [tpSlMode, setTpSlMode] = useState('price'); // 'price' (Absolute USD price), 'usd_amount' ($ profit/loss), 'pips'
+  const [tpSlMode, setTpSlMode] = useState('price'); // 'price', 'usd_amount', 'pips'
   const [tpValue, setTpValue] = useState('');
   const [slValue, setSlValue] = useState('');
   
@@ -208,17 +208,20 @@ export default function App() {
     }
   };
 
-  // Fetch active positions
-  const fetchPositions = async (jwtToken, account) => {
+  // Fetch active positions and default to the most recent one
+  const fetchPositions = async (jwtToken, account, allInstruments) => {
     try {
       const res = await fetch(`/api/positions?accountType=${accountType}&accountId=${account.id}&accNum=${account.accNum || '0'}`, {
         headers: { 'Authorization': `Bearer ${jwtToken}` }
       });
       const data = await res.json();
+      
+      const targetInstruments = allInstruments || instruments;
+
       if (data && data.d && data.d.positions) {
         const parsedPositions = data.d.positions.map(posArr => {
           const instId = posArr[1];
-          const instrumentObj = instruments.find(inst => 
+          const instrumentObj = targetInstruments.find(inst => 
             String(inst.tradableInstrumentId) === String(instId) || String(inst.id) === String(instId)
           );
           const symbolName = instrumentObj ? instrumentObj.name : `Instrument #${instId}`;
@@ -236,7 +239,21 @@ export default function App() {
             pnl: posArr[9]
           };
         });
+        
         setPositions(parsedPositions);
+
+        // DEFAULT TO MORE RECENT OPEN POSITION'S ASSET
+        if (parsedPositions.length > 0 && targetInstruments.length > 0) {
+          const mostRecentPos = parsedPositions[parsedPositions.length - 1];
+          const matchingInstrument = targetInstruments.find(inst => 
+            String(inst.tradableInstrumentId) === String(mostRecentPos.tradableInstrumentId) || 
+            String(inst.id) === String(mostRecentPos.tradableInstrumentId)
+          );
+          if (matchingInstrument && (!selectedInstrument || selectedInstrument.id !== matchingInstrument.id)) {
+            setSelectedInstrument(matchingInstrument);
+            addLog(`Chart defaulted to active position asset: ${matchingInstrument.name}`);
+          }
+        }
       } else {
         setPositions([]);
       }
@@ -255,11 +272,15 @@ export default function App() {
       const instList = data.instruments || (data.d && data.d.instruments);
       if (instList) {
         setInstruments(instList);
+        
+        // Load positions immediately after instruments are available to ensure proper mapping
+        fetchPositions(jwtToken, account, instList);
+
         const defaultPair = instList.find(inst => inst.name.includes('EURUSD') || inst.name.includes('GBPUSD') || inst.name.includes('QQQ') || inst.name.includes('NAS100'));
-        if (defaultPair) {
+        if (defaultPair && !selectedInstrument) {
           setSelectedInstrument(defaultPair);
           addLog(`Default instrument selected: ${defaultPair.name}`);
-        } else if (instList.length > 0) {
+        } else if (instList.length > 0 && !selectedInstrument) {
           setSelectedInstrument(instList[0]);
           addLog(`Instrument selected: ${instList[0].name}`);
         }
@@ -719,6 +740,18 @@ export default function App() {
           }
         });
 
+        // SYNC CROSSHAIRS FOR UNIFIED PANNING FEEL
+        mainChartRef.current.subscribeCrosshairMove(param => {
+          if (param.time) {
+            bottomChartRef.current.setCrosshairPosition({
+              time: param.time,
+              price: undefined
+            });
+          } else {
+            bottomChartRef.current.clearCrosshairPosition();
+          }
+        });
+
         addLog(`Rendered charts with Aura Main & Aura Bottom for ${selectedInstrument.name}`);
 
       } catch (err) {
@@ -744,7 +777,6 @@ export default function App() {
   useEffect(() => {
     if (!selectedAccount || !token) return;
 
-    // Refresh immediately on mount/change
     fetchState(token, selectedAccount);
     fetchPositions(token, selectedAccount);
 
@@ -754,19 +786,62 @@ export default function App() {
     }, refreshInterval);
 
     return () => clearInterval(stateTimer);
-  }, [selectedAccount, token, refreshInterval, instruments]); // Include instruments to resolve position symbols correctly when they load
+  }, [selectedAccount, token, refreshInterval, instruments]);
+
+  // CHART LIVE REFRESH LOOP (Every 3 seconds, fetches the latest 10 bars and calls .update())
+  useEffect(() => {
+    if (!selectedInstrument || !token || !candleSeriesRef.current) return;
+
+    const fetchLatestAndUpdate = async () => {
+      try {
+        const toMs = Date.now();
+        const fromMs = toMs - (60 * 1000 * 20); // Last 20 minutes of bars
+
+        const infoRoute = selectedInstrument.routes?.find(r => r.type === 'INFO');
+        const routeIdVal = infoRoute ? infoRoute.id : 0;
+        const targetInstrumentId = selectedInstrument.tradableInstrumentId || selectedInstrument.id;
+        
+        const res = await fetch(
+          `/api/history?accountType=${accountType}&resolution=${resolution}&from=${fromMs}&to=${toMs}&tradableInstrumentId=${targetInstrumentId}&accNum=${selectedAccount?.accNum || '0'}&routeId=${routeIdVal}`,
+          { headers: { 'Authorization': `Bearer ${token}` } }
+        );
+        const data = await res.json();
+        const rawBars = (data.d && data.d.barDetails) || data.bars || [];
+        
+        if (rawBars.length > 0) {
+          const calculated = calculateIndicators(rawBars);
+          if (calculated) {
+            // Smoothly update the last few bars in real time without resetting scroll/zoom position
+            calculated.candles.forEach(bar => candleSeriesRef.current.update(bar));
+            calculated.vwap.forEach(bar => vwapSeriesRef.current.update(bar));
+            calculated.volume.forEach(bar => volumeSeriesRef.current.update(bar));
+            calculated.stoch14.forEach(bar => stoch14SeriesRef.current.update(bar));
+            calculated.stoch40.forEach(bar => stoch40SeriesRef.current.update(bar));
+            calculated.stoch60.forEach(bar => stoch60SeriesRef.current.update(bar));
+            
+            const latestClose = calculated.candles[calculated.candles.length - 1].close;
+            setCurrentPrice(latestClose);
+          }
+        }
+      } catch (err) {
+        console.error("Live chart update failed", err);
+      }
+    };
+
+    const chartLiveTimer = setInterval(fetchLatestAndUpdate, 3000);
+    return () => clearInterval(chartLiveTimer);
+  }, [selectedInstrument, resolution, token, selectedAccount]);
 
   // Effect to draw and manage entry, TP, and SL price lines on the chart
   useEffect(() => {
     if (!selectedInstrument || !candleSeriesRef.current || !mainChartRef.current) return;
 
-    // Find active position for the selected instrument
     const targetId = selectedInstrument.tradableInstrumentId || selectedInstrument.id;
     const activePos = positions.find(p => 
       String(p.tradableInstrumentId) === String(targetId)
     );
 
-    // Clean up old lines first
+    // Clean up old lines
     if (entryPriceLineRef.current) {
       candleSeriesRef.current.removePriceLine(entryPriceLineRef.current);
       entryPriceLineRef.current = null;
@@ -823,7 +898,7 @@ export default function App() {
           {
             time: entryTimeSeconds,
             position: isLong ? 'belowBar' : 'aboveBar',
-            color: isLong ? '#10b981' : '#ef4444', // Green for long, red for short
+            color: isLong ? '#10b981' : '#ef4444',
             shape: isLong ? 'arrowUp' : 'arrowDown',
             text: `${isLong ? 'LONG' : 'SHORT'} Entry`
           }
@@ -848,7 +923,6 @@ export default function App() {
       const currentPrice = candleSeriesRef.current.coordinateToPrice(y);
       if (!currentPrice) return;
 
-      // Update line position visually in real-time
       if (draggingLine.type === 'tp' && tpPriceLineRef.current) {
         tpPriceLineRef.current.applyOptions({ 
           price: currentPrice, 
@@ -919,7 +993,6 @@ export default function App() {
     const clickedPrice = candleSeriesRef.current.coordinateToPrice(y);
     if (!clickedPrice) return;
 
-    // Check click proximity (within 1.5% tolerance)
     const tpPrice = activePos.takeProfit;
     const slPrice = activePos.stopLoss;
     const tolerance = clickedPrice * 0.015;
