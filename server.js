@@ -119,7 +119,7 @@ app.get('/api/instruments', async (req, res) => {
 
 // Proxy endpoint to get history
 app.get('/api/history', async (req, res) => {
-  const { accountType, resolution, from, to, tradableInstrumentId } = req.query;
+  const { accountType, resolution, from, to, tradableInstrumentId, accNum } = req.query;
   const authHeader = req.headers['authorization'];
 
   try {
@@ -134,6 +134,7 @@ app.get('/api/history', async (req, res) => {
       },
       headers: {
         'Authorization': authHeader,
+        'accNum': accNum || '0',
         'Accept': 'application/json'
       }
     });

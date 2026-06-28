@@ -176,15 +176,26 @@ export default function App() {
       const data = await res.json();
       
       const activeConfig = currentConfig || config;
-      if (data && data.d && data.d.accountDetailsData && activeConfig && activeConfig.accountDetailsConfig) {
-        const cols = activeConfig.accountDetailsConfig.columns;
-        const mappedState = {};
-        cols.forEach((col, index) => {
-          mappedState[col.name] = data.d.accountDetailsData[index];
-        });
+      if (data && data.d && data.d.accountDetailsData) {
+        const arr = data.d.accountDetailsData;
+        // Robust fallback based on standard TradeLocker index mapping
+        const mappedState = {
+          balance: arr[0] !== undefined ? arr[0] : 0,
+          equity: arr[1] !== undefined ? arr[1] : 0,
+          openPnL: arr[22] !== undefined ? arr[22] : (arr[5] !== undefined ? arr[5] : 0)
+        };
+
+        // Apply dynamic config mapping if loaded successfully
+        if (activeConfig && activeConfig.accountDetailsConfig) {
+          const cols = activeConfig.accountDetailsConfig.columns;
+          cols.forEach((col, index) => {
+            if (arr[index] !== undefined) {
+              mappedState[col.name] = arr[index];
+            }
+          });
+        }
         setAccountState(mappedState);
       } else {
-        // Fallback if config is not loaded yet
         setAccountState(data);
       }
     } catch (err) {
@@ -491,7 +502,7 @@ export default function App() {
         const fromMs = toMs - (24 * 60 * 60 * 5 * 1000); // 5 days of history in MILLISECONDS
 
         const res = await fetch(
-          `/api/history?accountType=${accountType}&resolution=${resolution}&from=${fromMs}&to=${toMs}&tradableInstrumentId=${selectedInstrument.id}`,
+          `/api/history?accountType=${accountType}&resolution=${resolution}&from=${fromMs}&to=${toMs}&tradableInstrumentId=${selectedInstrument.id}&accNum=${selectedAccount?.accNum || '0'}`,
           { headers: { 'Authorization': `Bearer ${token}` } }
         );
         const data = await res.json();
