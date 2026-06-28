@@ -409,23 +409,33 @@ export default function App() {
     const calculatedVWAP = [];
     let cumVolume = 0;
     let cumPriceVolume = 0;
+    let lastDayStr = '';
 
     const dataWithIndicators = bars.map(bar => {
-      const time = bar.t;
+      const timeInSeconds = Math.floor(bar.t / 1000);
       const typicalPrice = (bar.h + bar.l + bar.c) / 3;
       const volume = bar.v || 0;
+
+      // Reset VWAP at the start of each day
+      const dateObj = new Date(bar.t);
+      const dayStr = `${dateObj.getUTCDate()}-${dateObj.getUTCMonth()}-${dateObj.getUTCFullYear()}`;
+      if (dayStr !== lastDayStr) {
+        cumVolume = 0;
+        cumPriceVolume = 0;
+        lastDayStr = dayStr;
+      }
 
       cumVolume += volume;
       cumPriceVolume += typicalPrice * volume;
 
       const vwapVal = cumVolume > 0 ? (cumPriceVolume / cumVolume) : bar.c;
-      calculatedVWAP.push({ time, value: vwapVal });
+      calculatedVWAP.push({ time: timeInSeconds, value: vwapVal });
 
       if (bar.h > sessionHigh) sessionHigh = bar.h;
       if (bar.l < sessionLow) sessionLow = bar.l;
 
       return {
-        time,
+        time: timeInSeconds,
         open: bar.o,
         high: bar.h,
         low: bar.l,
@@ -439,18 +449,18 @@ export default function App() {
     const fib500 = sessionHigh - 0.500 * range;
     const fib618 = sessionHigh - 0.618 * range;
 
-    const sessionHighData = bars.map(b => ({ time: b.t, value: sessionHigh }));
-    const sessionLowData = bars.map(b => ({ time: b.t, value: sessionLow }));
-    const fib236Data = bars.map(b => ({ time: b.t, value: fib236 }));
-    const fib500Data = bars.map(b => ({ time: b.t, value: fib500 }));
-    const fib618Data = bars.map(b => ({ time: b.t, value: fib618 }));
+    const sessionHighData = bars.map(b => ({ time: Math.floor(b.t / 1000), value: sessionHigh }));
+    const sessionLowData = bars.map(b => ({ time: Math.floor(b.t / 1000), value: sessionLow }));
+    const fib236Data = bars.map(b => ({ time: Math.floor(b.t / 1000), value: fib236 }));
+    const fib500Data = bars.map(b => ({ time: Math.floor(b.t / 1000), value: fib500 }));
+    const fib618Data = bars.map(b => ({ time: Math.floor(b.t / 1000), value: fib618 }));
 
     // Stochastics
     const getStochasticData = (period, kSmoothing, dSmoothing) => {
       const kValues = [];
       for (let i = 0; i < bars.length; i++) {
         if (i < period - 1) {
-          kValues.push({ time: bars[i].t, value: 50 });
+          kValues.push({ time: Math.floor(bars[i].t / 1000), value: 50 });
           continue;
         }
         const slice = bars.slice(i - period + 1, i + 1);
@@ -458,7 +468,7 @@ export default function App() {
         const lowestLow = Math.min(...slice.map(b => b.l));
         const highestHigh = Math.max(...slice.map(b => b.h));
         const k = ((currentClose - lowestLow) / ((highestHigh - lowestLow) || 1)) * 100;
-        kValues.push({ time: bars[i].t, value: k });
+        kValues.push({ time: Math.floor(bars[i].t / 1000), value: k });
       }
 
       const smoothedK = [];
@@ -491,7 +501,7 @@ export default function App() {
     const stoch60 = getStochasticData(60, 10, 10);
 
     const volumeData = bars.map(bar => ({
-      time: bar.t,
+      time: Math.floor(bar.t / 1000),
       value: bar.v || 0,
       color: bar.c >= bar.o ? '#0ea5e9' : '#ef4444'
     }));
