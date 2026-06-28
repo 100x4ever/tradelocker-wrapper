@@ -73,6 +73,27 @@ app.get('/api/accounts', async (req, res) => {
   }
 });
 
+// Proxy endpoint to get config
+app.get('/api/config', async (req, res) => {
+  const { accountType } = req.query;
+  const authHeader = req.headers['authorization'];
+
+  try {
+    const baseUrl = getBaseUrl(accountType);
+    const response = await axios.get(`${baseUrl}/trade/config`, {
+      headers: {
+        'Authorization': authHeader,
+        'Accept': 'application/json'
+      }
+    });
+    res.json(response.data);
+  } catch (error) {
+    console.error('Fetch config error:', error.message);
+    const status = error.response ? error.response.status : 500;
+    res.status(status).json({ error: 'Failed to fetch config' });
+  }
+});
+
 // Proxy endpoint to get instruments
 app.get('/api/instruments', async (req, res) => {
   const { accountType, accountId, accNum } = req.query;
@@ -125,7 +146,7 @@ app.get('/api/history', async (req, res) => {
 
 // Proxy endpoint to place orders
 app.post('/api/orders', async (req, res) => {
-  const { accountType, accountId, accNum, qty, side, type, tradableInstrumentId, stopLoss, takeProfit } = req.body;
+  const { accountType, accountId, accNum, qty, side, type, price, tradableInstrumentId, stopLoss, takeProfit } = req.body;
   const authHeader = req.headers['authorization'];
 
   try {
@@ -137,7 +158,7 @@ app.post('/api/orders', async (req, res) => {
       type,
       validity: type === 'market' ? 'IOC' : 'GTC',
       tradableInstrumentId,
-      price: 0
+      price: type === 'market' ? 0 : parseFloat(price)
     };
 
     if (stopLoss) payload.stopLoss = stopLoss;

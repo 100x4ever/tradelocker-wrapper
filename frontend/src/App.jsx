@@ -13,7 +13,8 @@ import {
   DollarSign,
   TrendingDown,
   Layers,
-  BarChart3
+  BarChart3,
+  HelpCircle
 } from 'lucide-react';
 
 export default function App() {
@@ -25,10 +26,11 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [token, setToken] = useState('');
   
-  // Account Information
+  // Account & Config Information
   const [accounts, setAccounts] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [accountState, setAccountState] = useState(null);
+  const [config, setConfig] = useState(null);
   
   // Trade Setup
   const [instruments, setInstruments] = useState([]);
@@ -36,10 +38,19 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [resolution, setResolution] = useState('5m');
   const [lotSize, setLotSize] = useState('0.01');
-  const [tpPips, setTpPips] = useState('30');
-  const [slPips, setSlPips] = useState('15');
+  
+  // Order Type & Price
+  const [orderType, setOrderType] = useState('market'); // 'market' or 'limit'
+  const [limitPrice, setLimitPrice] = useState('');
+  
+  // TP & SL Settings
+  const [tpSlMode, setTpSlMode] = useState('price'); // 'price' (Absolute USD price), 'usd_amount' ($ profit/loss), 'pips'
+  const [tpValue, setTpValue] = useState('');
+  const [slValue, setSlValue] = useState('');
+  
   const [autoTradeEnabled, setAutoTradeEnabled] = useState(false);
   const [positions, setPositions] = useState([]);
+  const [currentPrice, setCurrentPrice] = useState(null);
 
   // Log / Message Feed
   const [logs, setLogs] = useState([]);
@@ -58,7 +69,6 @@ export default function App() {
   const fib236SeriesRef = useRef(null);
   const fib500SeriesRef = useRef(null);
   const fib618SeriesRef = useRef(null);
-  const cloudSeriesRef = useRef(null);
 
   // Bottom Series References
   const volumeSeriesRef = useRef(null);
@@ -106,8 +116,8 @@ export default function App() {
         localStorage.setItem('tl_server', server);
         localStorage.setItem('tl_account_type', accountType);
 
-        // Fetch user accounts
-        fetchAccounts(data.accessToken);
+        // Fetch config first, then accounts
+        await fetchConfig(data.accessToken);
       } else {
         addLog(`Authentication failed: ${data.message || 'Check credentials'}`);
       }
@@ -116,8 +126,26 @@ export default function App() {
     }
   };
 
+  // Fetch TradeLocker Config (for account details indices mapping)
+  const fetchConfig = async (jwtToken) => {
+    try {
+      const res = await fetch(`/api/config?accountType=${accountType}`, {
+        headers: { 'Authorization': `Bearer ${jwtToken}` }
+      });
+      const data = await res.json();
+      if (data && data.accountDetailsConfig) {
+        setConfig(data);
+        addLog('System configuration loaded.');
+      }
+      // Load accounts after config is retrieved
+      fetchAccounts(jwtToken, data);
+    } catch (err) {
+      addLog(`Failed to fetch config: ${err.message}`);
+    }
+  };
+
   // Fetch accounts list
-  const fetchAccounts = async (jwtToken) => {
+  const fetchAccounts = async (jwtToken, currentConfig) => {
     try {
       const res = await fetch(`/api/accounts?accountType=${accountType}`, {
         headers: { 'Authorization': `Bearer ${jwtToken}` }
@@ -125,11 +153,10 @@ export default function App() {
       const data = await res.json();
       if (data.accounts && data.accounts.length > 0) {
         setAccounts(data.accounts);
-        // Default select the first account
         const firstAccount = data.accounts[0];
         setSelectedAccount(firstAccount);
         addLog(`Loaded accounts. Selected: #${firstAccount.id}`);
-        fetchState(jwtToken, firstAccount);
+        fetchState(jwtToken, firstAccount, currentConfig || config);
         fetchInstruments(jwtToken, firstAccount);
         fetchPositions(jwtToken, firstAccount);
       } else {
@@ -140,14 +167,24 @@ export default function App() {
     }
   };
 
-  // Fetch account details/state
-  const fetchState = async (jwtToken, account) => {
+  // Fetch account details/state and map indices
+  const fetchState = async (jwtToken, account, currentConfig) => {
     try {
       const res = await fetch(`/api/state?accountType=${accountType}&accountId=${account.id}&accNum=${account.accNum || '0'}`, {
         headers: { 'Authorization': `Bearer ${jwtToken}` }
       });
       const data = await res.json();
-      if (data) {
+      
+      const activeConfig = currentConfig || config;
+      if (data && data.d && data.d.accountDetailsData && activeConfig && activeConfig.accountDetailsConfig) {
+        const cols = activeConfig.accountDetailsConfig.columns;
+        const mappedState = {};
+        cols.forEach((col, index) => {
+          mappedState[col.name] = data.d.accountDetailsData[index];
+        });
+        setAccountState(mappedState);
+      } else {
+        // Fallback if config is not loaded yet
         setAccountState(data);
       }
     } catch (err) {
@@ -179,7 +216,6 @@ export default function App() {
       const data = await res.json();
       if (data.instruments) {
         setInstruments(data.instruments);
-        // Select a default major currency pair if present, e.g. EURUSD
         const defaultPair = data.instruments.find(inst => inst.name.includes('EURUSD') || inst.name.includes('GBPUSD'));
         if (defaultPair) {
           setSelectedInstrument(defaultPair);
@@ -194,7 +230,58 @@ export default function App() {
     }
   };
 
-  // Toggle Auto-Trading on/off
+  // Helper to calculate TP & SL prices based on mode
+  const calculateTpSlPrices = (side, entryPrice) => {
+    let tpPrice = null;
+    let slPrice = null;
+
+    if (!entryPrice) return { tpPrice, slPrice };
+
+    // 1. Absolute Price Mode (USD / Asset price)
+    if (tpSlMode === 'price') {
+      if (tpValue) tpPrice = parseFloat(tpValue);
+      if (slValue) slPrice = parseFloat(slValue);
+    } 
+    // 2. USD Profit/Loss Amount Mode
+    else if (tpSlMode === 'usd_amount') {
+      // Approximate contract calculation
+      // Standard contract size is 100,000 for FX, 1 for Indices/Crypto.
+      const isForex = selectedInstrument?.name.includes('/') || selectedInstrument?.name.length === 6;
+      const contractSize = isForex ? 100000 : 1; 
+      const parsedLot = parseFloat(lotSize) || 0.01;
+      
+      // Change in price = Target USD / (LotSize * ContractSize)
+      const priceDiffTp = tpValue ? (parseFloat(tpValue) / (parsedLot * contractSize)) : null;
+      const priceDiffSl = slValue ? (parseFloat(slValue) / (parsedLot * contractSize)) : null;
+
+      if (priceDiffTp) {
+        tpPrice = side === 'buy' ? entryPrice + priceDiffTp : entryPrice - priceDiffTp;
+      }
+      if (priceDiffSl) {
+        slPrice = side === 'buy' ? entryPrice - priceDiffSl : entryPrice + priceDiffSl;
+      }
+    }
+    // 3. Pips Mode
+    else if (tpSlMode === 'pips') {
+      const pipSize = selectedInstrument?.name.includes('JPY') ? 0.01 : 0.0001;
+      const priceDiffTp = tpValue ? (parseFloat(tpValue) * pipSize) : null;
+      const priceDiffSl = slValue ? (parseFloat(slValue) * pipSize) : null;
+
+      if (priceDiffTp) {
+        tpPrice = side === 'buy' ? entryPrice + priceDiffTp : entryPrice - priceDiffTp;
+      }
+      if (priceDiffSl) {
+        slPrice = side === 'buy' ? entryPrice - priceDiffSl : entryPrice + priceDiffSl;
+      }
+    }
+
+    return {
+      tpPrice: tpPrice ? parseFloat(tpPrice.toFixed(5)) : undefined,
+      slPrice: slPrice ? parseFloat(slPrice.toFixed(5)) : undefined
+    };
+  };
+
+  // Toggle Auto-Trading
   const toggleAutoTrade = async () => {
     if (!selectedAccount || !selectedInstrument) return;
     const nextState = !autoTradeEnabled;
@@ -219,8 +306,8 @@ export default function App() {
           tradableInstrumentId: selectedInstrument.id,
           symbol: selectedInstrument.name,
           lotSize,
-          tpPips,
-          slPips,
+          tpPips: tpSlMode === 'pips' ? tpValue : 0, // Fallback pips definition for simple backend trigger
+          slPips: tpSlMode === 'pips' ? slValue : 0,
           enabled: nextState
         })
       });
@@ -238,9 +325,17 @@ export default function App() {
       addLog('Select account and instrument first');
       return;
     }
-    addLog(`Submitting market ${side.toUpperCase()} order for ${lotSize} lots...`);
+
+    const priceToUse = orderType === 'market' ? currentPrice : parseFloat(limitPrice);
+    if (!priceToUse) {
+      addLog('No current price available. Wait for chart to load.');
+      return;
+    }
+
+    const { tpPrice, slPrice } = calculateTpSlPrices(side, priceToUse);
+
+    addLog(`Submitting ${orderType.toUpperCase()} ${side.toUpperCase()} order for ${lotSize} lots...`);
     try {
-      // Basic pip math estimation (using EURUSD/standard multiplier)
       const res = await fetch('/api/orders', {
         method: 'POST',
         headers: { 
@@ -253,16 +348,16 @@ export default function App() {
           accNum: selectedAccount.accNum,
           qty: parseFloat(lotSize),
           side,
-          type: 'market',
+          type: orderType,
+          price: orderType === 'market' ? 0 : priceToUse,
           tradableInstrumentId: selectedInstrument.id,
-          takeProfit: parseFloat(tpPips) || undefined,
-          stopLoss: parseFloat(slPips) || undefined
+          takeProfit: tpPrice,
+          stopLoss: slPrice
         })
       });
       const data = await res.json();
       if (res.ok) {
-        addLog(`Order placed successfully! Order ID: ${data.orderId || 'submitted'}`);
-        // Refresh positions and state
+        addLog(`Order placed successfully! ID: ${data.orderId || 'submitted'}`);
         fetchPositions(token, selectedAccount);
         fetchState(token, selectedAccount);
       } else {
@@ -277,12 +372,9 @@ export default function App() {
   const calculateIndicators = (bars) => {
     if (!bars || bars.length === 0) return null;
 
-    // 1. Session High, Low & Fib Levels
-    // We scan the visible session range to find max/min
     let sessionHigh = -Infinity;
     let sessionLow = Infinity;
     
-    // We will compute VWAP and Session variables
     const calculatedVWAP = [];
     let cumVolume = 0;
     let cumPriceVolume = 0;
@@ -322,27 +414,22 @@ export default function App() {
     const fib500Data = bars.map(b => ({ time: b.t, value: fib500 }));
     const fib618Data = bars.map(b => ({ time: b.t, value: fib618 }));
 
-    // 2. Stochastics Calculations
+    // Stochastics
     const getStochasticData = (period, kSmoothing, dSmoothing) => {
       const kValues = [];
-      const dValues = [];
-
       for (let i = 0; i < bars.length; i++) {
         if (i < period - 1) {
           kValues.push({ time: bars[i].t, value: 50 });
           continue;
         }
-
         const slice = bars.slice(i - period + 1, i + 1);
         const currentClose = slice[slice.length - 1].c;
         const lowestLow = Math.min(...slice.map(b => b.l));
         const highestHigh = Math.max(...slice.map(b => b.h));
-
         const k = ((currentClose - lowestLow) / ((highestHigh - lowestLow) || 1)) * 100;
         kValues.push({ time: bars[i].t, value: k });
       }
 
-      // Smooth %K
       const smoothedK = [];
       for (let i = 0; i < kValues.length; i++) {
         if (i < kSmoothing - 1) {
@@ -354,7 +441,6 @@ export default function App() {
         smoothedK.push({ time: kValues[i].time, value: avg });
       }
 
-      // Smooth %D
       const smoothedD = [];
       for (let i = 0; i < smoothedK.length; i++) {
         if (i < dSmoothing - 1) {
@@ -366,7 +452,7 @@ export default function App() {
         smoothedD.push({ time: smoothedK[i].time, value: avg });
       }
 
-      return smoothedD; // Return %D to represent the final line
+      return smoothedD;
     };
 
     const stoch14 = getStochasticData(14, 4, 3);
@@ -376,7 +462,7 @@ export default function App() {
     const volumeData = bars.map(bar => ({
       time: bar.t,
       value: bar.v || 0,
-      color: bar.c >= bar.o ? '#0ea5e9' : '#ef4444' // Cyan vs Red
+      color: bar.c >= bar.o ? '#0ea5e9' : '#ef4444'
     }));
 
     return {
@@ -400,11 +486,11 @@ export default function App() {
 
     const fetchHistoryAndRender = async () => {
       try {
-        const toSeconds = Math.floor(Date.now() / 1000);
-        const fromSeconds = toSeconds - (24 * 60 * 60 * 5); // 5 days of history
+        const toMs = Date.now();
+        const fromMs = toMs - (24 * 60 * 60 * 5 * 1000); // 5 days of history in MILLISECONDS
 
         const res = await fetch(
-          `/api/history?accountType=${accountType}&resolution=${resolution}&from=${fromSeconds}&to=${toSeconds}&tradableInstrumentId=${selectedInstrument.id}`,
+          `/api/history?accountType=${accountType}&resolution=${resolution}&from=${fromMs}&to=${toMs}&tradableInstrumentId=${selectedInstrument.id}`,
           { headers: { 'Authorization': `Bearer ${token}` } }
         );
         const data = await res.json();
@@ -418,6 +504,10 @@ export default function App() {
         const calculated = calculateIndicators(rawBars);
         if (!calculated) return;
 
+        // Save current price
+        const latestClose = calculated.candles[calculated.candles.length - 1].close;
+        setCurrentPrice(latestClose);
+
         // Initialize Charts
         if (!mainChartRef.current && mainChartContainerRef.current) {
           mainChartRef.current = createChart(mainChartContainerRef.current, {
@@ -429,14 +519,10 @@ export default function App() {
               vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
               horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
             },
-            rightPriceScale: {
-              borderColor: 'rgba(255, 255, 255, 0.1)',
-            },
-            timeScale: {
-              borderColor: 'rgba(255, 255, 255, 0.1)',
-            },
+            rightPriceScale: { borderColor: 'rgba(255, 255, 255, 0.1)' },
+            timeScale: { borderColor: 'rgba(255, 255, 255, 0.1)' },
             width: mainChartContainerRef.current.clientWidth,
-            height: 450,
+            height: 400,
           });
 
           candleSeriesRef.current = mainChartRef.current.addCandlestickSeries({
@@ -456,14 +542,14 @@ export default function App() {
           sessionHighSeriesRef.current = mainChartRef.current.addLineSeries({
             color: '#10b981',
             lineWidth: 1.5,
-            lineStyle: 2, // Dashed
+            lineStyle: 2,
             title: 'Session High'
           });
 
           sessionLowSeriesRef.current = mainChartRef.current.addLineSeries({
             color: '#ef4444',
             lineWidth: 1.5,
-            lineStyle: 2, // Dashed
+            lineStyle: 2,
             title: 'Session Low'
           });
 
@@ -497,14 +583,10 @@ export default function App() {
               vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
               horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
             },
-            rightPriceScale: {
-              borderColor: 'rgba(255, 255, 255, 0.1)',
-            },
-            timeScale: {
-              borderColor: 'rgba(255, 255, 255, 0.1)',
-            },
+            rightPriceScale: { borderColor: 'rgba(255, 255, 255, 0.1)' },
+            timeScale: { borderColor: 'rgba(255, 255, 255, 0.1)' },
             width: bottomChartContainerRef.current.clientWidth,
-            height: 200,
+            height: 180,
           });
 
           volumeSeriesRef.current = bottomChartRef.current.addHistogramSeries({
@@ -512,41 +594,37 @@ export default function App() {
           });
 
           bottomChartRef.current.priceScale('volume').applyOptions({
-            scaleMargins: {
-              top: 0.8,
-              bottom: 0,
-            },
+            scaleMargins: { top: 0.8, bottom: 0 },
           });
 
           stoch14SeriesRef.current = bottomChartRef.current.addLineSeries({
-            color: '#eab308', // Yellow
+            color: '#eab308',
             lineWidth: 1.5,
             title: 'Stoch 14'
           });
 
           stoch40SeriesRef.current = bottomChartRef.current.addLineSeries({
-            color: '#3b82f6', // Blue
+            color: '#3b82f6',
             lineWidth: 1.5,
             title: 'Stoch 40'
           });
 
           stoch60SeriesRef.current = bottomChartRef.current.addLineSeries({
-            color: '#ffffff', // White
+            color: '#ffffff',
             lineWidth: 1.5,
             title: 'Stoch 60'
           });
 
-          // Horizontal threshold lines
           overboughtSeriesRef.current = bottomChartRef.current.addLineSeries({
             color: 'rgba(255, 255, 255, 0.15)',
             lineWidth: 1,
-            lineStyle: 3, // Dotted
+            lineStyle: 3,
           });
 
           oversoldSeriesRef.current = bottomChartRef.current.addLineSeries({
             color: 'rgba(255, 255, 255, 0.15)',
             lineWidth: 1,
-            lineStyle: 3, // Dotted
+            lineStyle: 3,
           });
         }
 
@@ -564,7 +642,6 @@ export default function App() {
         stoch40SeriesRef.current.setData(calculated.stoch40);
         stoch60SeriesRef.current.setData(calculated.stoch60);
 
-        // Fixed bounds for overbought/oversold indicator levels (80 and 20)
         const boundary80 = calculated.candles.map(c => ({ time: c.time, value: 80 }));
         const boundary20 = calculated.candles.map(c => ({ time: c.time, value: 20 }));
         overboughtSeriesRef.current.setData(boundary80);
@@ -595,7 +672,7 @@ export default function App() {
 
     fetchHistoryAndRender();
 
-    // Auto refresh price state loop (every 5 seconds)
+    // Auto-refresh loop
     const stateTimer = setInterval(() => {
       if (selectedAccount) {
         fetchState(token, selectedAccount);
@@ -638,16 +715,20 @@ export default function App() {
           <div className="flex items-center gap-6">
             <div className="text-right">
               <span className="text-xs text-slate-400 block">BALANCE</span>
-              <span className="font-semibold text-emerald-400">${parseFloat(accountState.balance || 0).toLocaleString()}</span>
+              <span className="font-semibold text-emerald-400">
+                ${parseFloat(accountState.balance || accountState.accountBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
             </div>
             <div className="text-right">
               <span className="text-xs text-slate-400 block">EQUITY</span>
-              <span className="font-semibold text-indigo-400">${parseFloat(accountState.equity || 0).toLocaleString()}</span>
+              <span className="font-semibold text-indigo-400">
+                ${parseFloat(accountState.equity || accountState.accountEquity || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
             </div>
             <div className="text-right">
-              <span className="text-xs text-slate-400 block">OPEN PNL</span>
-              <span className={`font-semibold ${(accountState.openPnL || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                ${parseFloat(accountState.openPnL || 0).toLocaleString()}
+              <span className="text-xs text-slate-400 block">UNREALIZED PNL</span>
+              <span className={`font-semibold ${(accountState.openPnL || accountState.unrealizedPnL || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                ${parseFloat(accountState.openPnL || accountState.unrealizedPnL || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
           </div>
@@ -655,7 +736,7 @@ export default function App() {
       </header>
 
       <div className="flex-1 px-4 pb-4 grid grid-cols-1 lg:grid-cols-4 gap-4">
-        {/* Left Sidebar: Login & Configuration */}
+        {/* Left Sidebar */}
         <div className="flex flex-col gap-4">
           {/* Connection Panel */}
           <div className="glass-panel p-5 flex flex-col gap-4">
@@ -754,6 +835,39 @@ export default function App() {
               </h2>
               
               <div className="flex flex-col gap-3">
+                {/* Order Type Select */}
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">Order Type</label>
+                  <div className="grid grid-cols-2 gap-1.5 bg-slate-900 p-1 rounded border border-slate-800">
+                    <button 
+                      onClick={() => setOrderType('market')} 
+                      className={`py-1.5 text-xs rounded font-medium transition-all ${orderType === 'market' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                    >
+                      Market
+                    </button>
+                    <button 
+                      onClick={() => setOrderType('limit')} 
+                      className={`py-1.5 text-xs rounded font-medium transition-all ${orderType === 'limit' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                    >
+                      Limit
+                    </button>
+                  </div>
+                </div>
+
+                {orderType === 'limit' && (
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Limit Price</label>
+                    <input 
+                      type="number" 
+                      step="0.00001"
+                      value={limitPrice} 
+                      onChange={(e) => setLimitPrice(e.target.value)}
+                      placeholder={currentPrice ? `Current: ${currentPrice}` : '0.00000'}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100 focus:outline-none focus:border-violet-500" 
+                    />
+                  </div>
+                )}
+
                 <div>
                   <label className="text-xs text-slate-400 block mb-1">Lot Size</label>
                   <input 
@@ -761,26 +875,58 @@ export default function App() {
                     step="0.01" 
                     value={lotSize} 
                     onChange={(e) => setLotSize(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100" 
+                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100 focus:outline-none" 
                   />
                 </div>
+
+                {/* TP / SL Mode Select */}
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">TP/SL Mode</label>
+                  <div className="grid grid-cols-3 gap-1 bg-slate-900 p-1 rounded border border-slate-800">
+                    <button 
+                      onClick={() => setTpSlMode('price')} 
+                      className={`py-1 text-[10px] rounded font-medium transition-all ${tpSlMode === 'price' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                    >
+                      Price (USD)
+                    </button>
+                    <button 
+                      onClick={() => setTpSlMode('usd_amount')} 
+                      className={`py-1 text-[10px] rounded font-medium transition-all ${tpSlMode === 'usd_amount' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                    >
+                      $ Value
+                    </button>
+                    <button 
+                      onClick={() => setTpSlMode('pips')} 
+                      className={`py-1 text-[10px] rounded font-medium transition-all ${tpSlMode === 'pips' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                    >
+                      Pips
+                    </button>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-xs text-slate-400 block mb-1">TP Offset (Pips)</label>
+                    <label className="text-xs text-slate-400 block mb-1">
+                      {tpSlMode === 'price' ? 'TP Price' : tpSlMode === 'usd_amount' ? 'TP Profit ($)' : 'TP Pips'}
+                    </label>
                     <input 
                       type="number" 
-                      value={tpPips} 
-                      onChange={(e) => setTpPips(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100" 
+                      value={tpValue} 
+                      onChange={(e) => setTpValue(e.target.value)}
+                      placeholder={tpSlMode === 'price' ? 'e.g. 715.00' : 'e.g. 50'}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100 focus:outline-none" 
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-400 block mb-1">SL Offset (Pips)</label>
+                    <label className="text-xs text-slate-400 block mb-1">
+                      {tpSlMode === 'price' ? 'SL Price' : tpSlMode === 'usd_amount' ? 'SL Loss ($)' : 'SL Pips'}
+                    </label>
                     <input 
                       type="number" 
-                      value={slPips} 
-                      onChange={(e) => setSlPips(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100" 
+                      value={slValue} 
+                      onChange={(e) => setSlValue(e.target.value)}
+                      placeholder={tpSlMode === 'price' ? 'e.g. 700.00' : 'e.g. 25'}
+                      className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100 focus:outline-none" 
                     />
                   </div>
                 </div>
@@ -833,7 +979,7 @@ export default function App() {
           )}
         </div>
 
-        {/* Central Pane: Charts & Active Details */}
+        {/* Central Pane */}
         <div className="lg:col-span-3 flex flex-col gap-4">
           <div className="glass-panel p-4 flex flex-col flex-1">
             {/* Chart Toolbar */}
@@ -877,7 +1023,7 @@ export default function App() {
                 )}
               </div>
 
-              {/* Resolution select */}
+              {/* Resolution */}
               <div className="flex items-center gap-1.5">
                 {['1m', '5m', '15m', '1h', '4h', '1d'].map(res => (
                   <button 
@@ -895,13 +1041,10 @@ export default function App() {
               </div>
             </div>
 
-            {/* TradingView Lightweight Charts Container */}
+            {/* Chart Area */}
             <div className="flex-1 flex flex-col gap-2">
               <div className="w-full relative bg-[#0f111a] rounded-lg overflow-hidden border border-slate-900">
-                {/* Aura Main Chart */}
                 <div ref={mainChartContainerRef} className="w-full"></div>
-                
-                {/* Aura Bottom Chart */}
                 <div ref={bottomChartContainerRef} className="w-full border-t border-slate-900"></div>
 
                 {!isLoggedIn && (
@@ -914,7 +1057,7 @@ export default function App() {
               </div>
             </div>
             
-            {/* Indicator Details Legend */}
+            {/* Legend */}
             <div className="flex flex-wrap gap-3 mt-3 text-xs text-slate-400 border-t border-slate-900 pt-3">
               <div className="indicator-tag">
                 <span className="w-2.5 h-1 bg-white rounded"></span>
@@ -947,9 +1090,9 @@ export default function App() {
             </div>
           </div>
 
-          {/* Active Positions & System Logs */}
+          {/* Bottom Panels */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Active Positions */}
+            {/* Open Positions */}
             <div className="glass-panel p-4 flex flex-col max-h-64 overflow-y-auto">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
                 <BarChart3 size={14} /> Open Positions
@@ -981,7 +1124,7 @@ export default function App() {
               )}
             </div>
 
-            {/* Logs feed */}
+            {/* Logs */}
             <div className="glass-panel p-4 flex flex-col max-h-64">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
                 System Log & Feed
