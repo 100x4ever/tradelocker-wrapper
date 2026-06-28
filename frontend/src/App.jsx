@@ -49,6 +49,9 @@ export default function App() {
   const [positions, setPositions] = useState([]);
   const [currentPrice, setCurrentPrice] = useState(null);
   
+  // Refresh Rate (ms)
+  const [refreshInterval, setRefreshInterval] = useState(2000);
+  
   // Interactivity Dragging State
   const [draggingLine, setDraggingLine] = useState(null); // { type: 'tp' | 'sl', initialPrice: number }
 
@@ -725,16 +728,7 @@ export default function App() {
 
     fetchHistoryAndRender();
 
-    // Auto-refresh loop
-    const stateTimer = setInterval(() => {
-      if (selectedAccount) {
-        fetchState(token, selectedAccount);
-        fetchPositions(token, selectedAccount);
-      }
-    }, 5000);
-
     return () => {
-      clearInterval(stateTimer);
       if (mainChartRef.current) {
         mainChartRef.current.remove();
         mainChartRef.current = null;
@@ -745,6 +739,22 @@ export default function App() {
       }
     };
   }, [selectedInstrument, resolution, token]);
+
+  // Separate useEffect for fast account state & position refreshing
+  useEffect(() => {
+    if (!selectedAccount || !token) return;
+
+    // Refresh immediately on mount/change
+    fetchState(token, selectedAccount);
+    fetchPositions(token, selectedAccount);
+
+    const stateTimer = setInterval(() => {
+      fetchState(token, selectedAccount);
+      fetchPositions(token, selectedAccount);
+    }, refreshInterval);
+
+    return () => clearInterval(stateTimer);
+  }, [selectedAccount, token, refreshInterval, instruments]); // Include instruments to resolve position symbols correctly when they load
 
   // Effect to draw and manage entry, TP, and SL price lines on the chart
   useEffect(() => {
@@ -1107,6 +1117,24 @@ export default function App() {
                     onChange={(e) => setLotSize(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100 focus:outline-none" 
                   />
+                </div>
+
+                {/* Refresh Speed Selector */}
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">Data Refresh Rate</label>
+                  <select 
+                    value={refreshInterval} 
+                    onChange={(e) => {
+                      setRefreshInterval(parseInt(e.target.value));
+                      addLog(`Data refresh rate set to ${e.target.value}ms`);
+                    }}
+                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100 focus:outline-none focus:border-violet-500"
+                  >
+                    <option value={1500}>Live (1.5s) - Recommended</option>
+                    <option value={3000}>Fast (3.0s)</option>
+                    <option value={5000}>Normal (5.0s)</option>
+                    <option value={10000}>Safe (10.0s)</option>
+                  </select>
                 </div>
 
                 {/* TP / SL Mode Select */}
