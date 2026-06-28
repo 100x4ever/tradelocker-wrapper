@@ -761,13 +761,14 @@ export default function App() {
     }
 
     if (activePos) {
+      const isLong = activePos.side === 'buy';
       // 1. Draw Entry Line
       entryPriceLineRef.current = candleSeriesRef.current.createPriceLine({
         price: activePos.price,
         color: '#3b82f6', // Blue
         lineWidth: 2,
         lineStyle: 2, // Dashed
-        title: `Entry: ${activePos.price}`,
+        title: `${isLong ? 'LONG' : 'SHORT'} Entry: ${activePos.price}`,
         axisLabelVisible: true,
       });
 
@@ -801,10 +802,10 @@ export default function App() {
         candleSeriesRef.current.setMarkers([
           {
             time: entryTimeSeconds,
-            position: 'belowBar',
-            color: '#eab308', // Yellow
-            shape: 'arrowUp',
-            text: `Entry`
+            position: isLong ? 'belowBar' : 'aboveBar',
+            color: isLong ? '#10b981' : '#ef4444', // Green for long, red for short
+            shape: isLong ? 'arrowUp' : 'arrowDown',
+            text: `${isLong ? 'LONG' : 'SHORT'} Entry`
           }
         ]);
       }
@@ -1334,7 +1335,7 @@ export default function App() {
                     <div key={pos.id} className="flex items-center justify-between p-2.5 bg-slate-900/60 rounded border border-slate-800/80 text-xs">
                       <div>
                         <span className={`font-bold mr-1.5 uppercase ${pos.side === 'buy' ? 'text-emerald-500' : 'text-red-500'}`}>
-                          {pos.side}
+                          {pos.side === 'buy' ? 'LONG' : 'SHORT'}
                         </span>
                         <span className="font-semibold text-slate-200">{pos.symbol || 'Instrument'}</span>
                         <div className="text-[10px] text-slate-500">Qty: {pos.qty} | Price: {pos.price}</div>
