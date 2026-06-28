@@ -687,20 +687,23 @@ export default function App() {
         overboughtSeriesRef.current.setData(boundary80);
         oversoldSeriesRef.current.setData(boundary20);
 
-        // Sync chart timespans
-        let isSyncing = false;
+        // Sync chart timespans with guard to prevent feedback loops
         mainChartRef.current.timeScale().subscribeVisibleTimeRangeChange(range => {
-          if (isSyncing || !range) return;
-          isSyncing = true;
-          bottomChartRef.current.timeScale().setVisibleRange(range);
-          isSyncing = false;
+          if (!range) return;
+          const bottomTimeScale = bottomChartRef.current.timeScale();
+          const currentRange = bottomTimeScale.getVisibleRange();
+          if (!currentRange || currentRange.from !== range.from || currentRange.to !== range.to) {
+            bottomTimeScale.setVisibleRange(range);
+          }
         });
 
         bottomChartRef.current.timeScale().subscribeVisibleTimeRangeChange(range => {
-          if (isSyncing || !range) return;
-          isSyncing = true;
-          mainChartRef.current.timeScale().setVisibleRange(range);
-          isSyncing = false;
+          if (!range) return;
+          const mainTimeScale = mainChartRef.current.timeScale();
+          const currentRange = mainTimeScale.getVisibleRange();
+          if (!currentRange || currentRange.from !== range.from || currentRange.to !== range.to) {
+            mainTimeScale.setVisibleRange(range);
+          }
         });
 
         addLog(`Rendered charts with Aura Main & Aura Bottom for ${selectedInstrument.name}`);
@@ -1262,7 +1265,7 @@ export default function App() {
               <div className="w-full relative bg-[#0f111a] rounded-lg overflow-hidden border border-slate-900">
                 <div 
                   ref={mainChartContainerRef} 
-                  className="w-full cursor-row-resize"
+                  className="w-full"
                   onMouseDown={handleChartMouseDown}
                 ></div>
                 <div ref={bottomChartContainerRef} className="w-full border-t border-slate-900"></div>
