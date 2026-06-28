@@ -526,10 +526,16 @@ export default function App() {
           { headers: { 'Authorization': `Bearer ${token}` } }
         );
         const data = await res.json();
+        
+        if (!res.ok) {
+          addLog(`History Error: ${data.error || 'Failed'} - ${JSON.stringify(data.details || data)}`);
+          return;
+        }
+
         const rawBars = (data.d && data.d.barDetails) || data.bars || [];
 
         if (rawBars.length === 0) {
-          addLog('No historical data returned from TradeLocker.');
+          addLog(`No bars returned: ${JSON.stringify(data)}`);
           return;
         }
 

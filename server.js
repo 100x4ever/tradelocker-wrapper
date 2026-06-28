@@ -122,6 +122,8 @@ app.get('/api/history', async (req, res) => {
   const { accountType, resolution, from, to, tradableInstrumentId, accNum } = req.query;
   const authHeader = req.headers['authorization'];
 
+  console.log(`History Request: instrument=${tradableInstrumentId}, res=${resolution}, from=${from}, to=${to}, accNum=${accNum}`);
+
   try {
     const baseUrl = getBaseUrl(accountType);
     const response = await axios.get(`${baseUrl}/trade/history`, {
@@ -138,11 +140,15 @@ app.get('/api/history', async (req, res) => {
         'Accept': 'application/json'
       }
     });
+    console.log(`History Response Status: ${response.status}, Bars count: ${response.data?.d?.barDetails?.length || 0}`);
     res.json(response.data);
   } catch (error) {
-    console.error('Fetch history error:', error.message);
+    console.error('Fetch history error details:', error.response?.data || error.message);
     const status = error.response ? error.response.status : 500;
-    res.status(status).json({ error: 'Failed to fetch price history' });
+    res.status(status).json({ 
+      error: 'Failed to fetch price history', 
+      details: error.response?.data || error.message 
+    });
   }
 });
 
