@@ -307,7 +307,7 @@ app.post('/api/auto-trade/toggle', async (req, res) => {
         }
       });
 
-      const bars = historyRes.data.bars || [];
+      const bars = (historyRes.data.d && historyRes.data.d.barDetails) || historyRes.data.bars || [];
       if (bars.length < 60) return; // Need enough bars for Stochastics
 
       // Calculate indicators on the backend to trigger trade logic

@@ -210,8 +210,28 @@ export default function App() {
         headers: { 'Authorization': `Bearer ${jwtToken}` }
       });
       const data = await res.json();
-      if (data.positions) {
-        setPositions(data.positions);
+      if (data && data.d && data.d.positions) {
+        const parsedPositions = data.d.positions.map(posArr => {
+          const instId = posArr[1];
+          // Find symbol in instruments list to display human readable name
+          const instrumentObj = instruments.find(inst => String(inst.id) === String(instId));
+          const symbolName = instrumentObj ? instrumentObj.name : `Instrument #${instId}`;
+
+          return {
+            id: posArr[0],
+            tradableInstrumentId: instId,
+            symbol: symbolName,
+            side: posArr[3],
+            qty: posArr[4],
+            price: posArr[5],
+            stopLoss: posArr[6],
+            takeProfit: posArr[7],
+            pnl: posArr[9]
+          };
+        });
+        setPositions(parsedPositions);
+      } else {
+        setPositions([]);
       }
     } catch (err) {
       console.error(err);
@@ -506,7 +526,7 @@ export default function App() {
           { headers: { 'Authorization': `Bearer ${token}` } }
         );
         const data = await res.json();
-        const rawBars = data.bars || [];
+        const rawBars = (data.d && data.d.barDetails) || data.bars || [];
 
         if (rawBars.length === 0) {
           addLog('No historical data returned from TradeLocker.');
