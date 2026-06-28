@@ -75,7 +75,7 @@ app.get('/api/accounts', async (req, res) => {
 
 // Proxy endpoint to get config
 app.get('/api/config', async (req, res) => {
-  const { accountType } = req.query;
+  const { accountType, accNum } = req.query;
   const authHeader = req.headers['authorization'];
 
   try {
@@ -83,6 +83,7 @@ app.get('/api/config', async (req, res) => {
     const response = await axios.get(`${baseUrl}/trade/config`, {
       headers: {
         'Authorization': authHeader,
+        'accNum': accNum || '0',
         'Accept': 'application/json'
       }
     });

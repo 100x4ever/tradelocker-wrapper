@@ -129,7 +129,7 @@ export default function App() {
   // Fetch TradeLocker Config (for account details indices mapping)
   const fetchConfig = async (jwtToken) => {
     try {
-      const res = await fetch(`/api/config?accountType=${accountType}`, {
+      const res = await fetch(`/api/config?accountType=${accountType}&accNum=0`, {
         headers: { 'Authorization': `Bearer ${jwtToken}` }
       });
       const data = await res.json();
@@ -214,15 +214,16 @@ export default function App() {
         headers: { 'Authorization': `Bearer ${jwtToken}` }
       });
       const data = await res.json();
-      if (data.instruments) {
-        setInstruments(data.instruments);
-        const defaultPair = data.instruments.find(inst => inst.name.includes('EURUSD') || inst.name.includes('GBPUSD'));
+      const instList = data.instruments || (data.d && data.d.instruments);
+      if (instList) {
+        setInstruments(instList);
+        const defaultPair = instList.find(inst => inst.name.includes('EURUSD') || inst.name.includes('GBPUSD') || inst.name.includes('QQQ') || inst.name.includes('NAS100'));
         if (defaultPair) {
           setSelectedInstrument(defaultPair);
           addLog(`Default instrument selected: ${defaultPair.name}`);
-        } else if (data.instruments.length > 0) {
-          setSelectedInstrument(data.instruments[0]);
-          addLog(`Instrument selected: ${data.instruments[0].name}`);
+        } else if (instList.length > 0) {
+          setSelectedInstrument(instList[0]);
+          addLog(`Instrument selected: ${instList[0].name}`);
         }
       }
     } catch (err) {
@@ -804,7 +805,7 @@ export default function App() {
                     className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100 focus:outline-none"
                     value={selectedAccount ? selectedAccount.id : ''}
                     onChange={(e) => {
-                      const acc = accounts.find(a => a.id === parseInt(e.target.value));
+                      const acc = accounts.find(a => String(a.id) === String(e.target.value));
                       setSelectedAccount(acc);
                       fetchState(token, acc);
                       fetchPositions(token, acc);
