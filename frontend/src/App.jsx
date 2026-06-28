@@ -383,6 +383,7 @@ export default function App() {
           type: orderType,
           price: orderType === 'market' ? 0 : priceToUse,
           tradableInstrumentId: selectedInstrument.id,
+          routeId: selectedInstrument.routes?.TRADE || 0,
           takeProfit: tpPrice,
           stopLoss: slPrice
         })
@@ -521,8 +522,9 @@ export default function App() {
         const toMs = Date.now();
         const fromMs = toMs - (24 * 60 * 60 * 5 * 1000); // 5 days of history in MILLISECONDS
 
+        const routeIdVal = selectedInstrument.routes?.INFO || 0;
         const res = await fetch(
-          `/api/history?accountType=${accountType}&resolution=${resolution}&from=${fromMs}&to=${toMs}&tradableInstrumentId=${selectedInstrument.id}&accNum=${selectedAccount?.accNum || '0'}`,
+          `/api/history?accountType=${accountType}&resolution=${resolution}&from=${fromMs}&to=${toMs}&tradableInstrumentId=${selectedInstrument.id}&accNum=${selectedAccount?.accNum || '0'}&routeId=${routeIdVal}`,
           { headers: { 'Authorization': `Bearer ${token}` } }
         );
         const data = await res.json();

@@ -119,10 +119,10 @@ app.get('/api/instruments', async (req, res) => {
 
 // Proxy endpoint to get history
 app.get('/api/history', async (req, res) => {
-  const { accountType, resolution, from, to, tradableInstrumentId, accNum } = req.query;
+  const { accountType, resolution, from, to, tradableInstrumentId, accNum, routeId } = req.query;
   const authHeader = req.headers['authorization'];
 
-  console.log(`History Request: instrument=${tradableInstrumentId}, res=${resolution}, from=${from}, to=${to}, accNum=${accNum}`);
+  console.log(`History Request: instrument=${tradableInstrumentId}, res=${resolution}, from=${from}, to=${to}, accNum=${accNum}, routeId=${routeId}`);
 
   try {
     const baseUrl = getBaseUrl(accountType);
@@ -132,7 +132,7 @@ app.get('/api/history', async (req, res) => {
         from,
         to,
         tradableInstrumentId,
-        routeId: 'INFO'
+        routeId: parseInt(routeId) || 0
       },
       headers: {
         'Authorization': authHeader,
@@ -154,14 +154,14 @@ app.get('/api/history', async (req, res) => {
 
 // Proxy endpoint to place orders
 app.post('/api/orders', async (req, res) => {
-  const { accountType, accountId, accNum, qty, side, type, price, tradableInstrumentId, stopLoss, takeProfit } = req.body;
+  const { accountType, accountId, accNum, qty, side, type, price, tradableInstrumentId, routeId, stopLoss, takeProfit } = req.body;
   const authHeader = req.headers['authorization'];
 
   try {
     const baseUrl = getBaseUrl(accountType);
     const payload = {
       qty,
-      routeId: 'TRADE',
+      routeId: parseInt(routeId) || 0,
       side,
       type,
       validity: type === 'market' ? 'IOC' : 'GTC',
