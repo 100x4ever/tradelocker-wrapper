@@ -92,6 +92,9 @@ export default function App() {
     selectedInstrumentRef.current = selectedInstrument;
   }, [selectedInstrument]);
 
+  // Ref to track the last drawn position to prevent blinking on tick updates
+  const lastDrawnPositionRef = useRef(null);
+
   // Load saved credentials on mount
   useEffect(() => {
     const savedEmail = localStorage.getItem('tl_email') || '';
@@ -943,6 +946,22 @@ export default function App() {
     const activePos = positions.find(p => 
       String(p.tradableInstrumentId) === String(targetId)
     );
+
+    // Check if the position data has actually changed before applying updates (prevents blinking)
+    const hasChanged = !lastDrawnPositionRef.current || 
+      lastDrawnPositionRef.current.id !== activePos?.id ||
+      lastDrawnPositionRef.current.price !== activePos?.price ||
+      lastDrawnPositionRef.current.takeProfit !== activePos?.takeProfit ||
+      lastDrawnPositionRef.current.stopLoss !== activePos?.stopLoss ||
+      lastDrawnPositionRef.current.side !== activePos?.side ||
+      lastDrawnPositionRef.current.time !== activePos?.time;
+
+    if (!hasChanged) {
+      return; // Skip drawing/markers if data is identical
+    }
+
+    // Update reference
+    lastDrawnPositionRef.current = activePos ? { ...activePos } : null;
 
     if (activePos) {
       const isLong = activePos.side === 'buy';
