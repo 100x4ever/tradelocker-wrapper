@@ -613,7 +613,10 @@ export default function App() {
               vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
               horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
             },
-            rightPriceScale: { borderColor: 'rgba(255, 255, 255, 0.1)' },
+            rightPriceScale: { 
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              width: 80, // Lock price scale width to prevent horizontal dislocation
+            },
             timeScale: { borderColor: 'rgba(255, 255, 255, 0.1)' },
             width: mainChartContainerRef.current.clientWidth,
             height: 400,
@@ -677,7 +680,10 @@ export default function App() {
               vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
               horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
             },
-            rightPriceScale: { borderColor: 'rgba(255, 255, 255, 0.1)' },
+            rightPriceScale: { 
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              width: 80, // Lock price scale width to prevent horizontal dislocation
+            },
             timeScale: { borderColor: 'rgba(255, 255, 255, 0.1)' },
             width: bottomChartContainerRef.current.clientWidth,
             height: 180,
