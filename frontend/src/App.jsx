@@ -790,22 +790,22 @@ export default function App() {
         overboughtSeriesRef.current.setData(boundary80);
         oversoldSeriesRef.current.setData(boundary20);
 
-        // Sync chart timespans with guard to prevent feedback loops
-        mainChartRef.current.timeScale().subscribeVisibleTimeRangeChange(range => {
+        // Sync chart logical ranges with guard to prevent feedback loops (locks bar spacing & zoom)
+        mainChartRef.current.timeScale().subscribeVisibleLogicalRangeChange(range => {
           if (!range) return;
           const bottomTimeScale = bottomChartRef.current.timeScale();
-          const currentRange = bottomTimeScale.getVisibleRange();
+          const currentRange = bottomTimeScale.getVisibleLogicalRange();
           if (!currentRange || currentRange.from !== range.from || currentRange.to !== range.to) {
-            bottomTimeScale.setVisibleRange(range);
+            bottomTimeScale.setVisibleLogicalRange(range);
           }
         });
 
-        bottomChartRef.current.timeScale().subscribeVisibleTimeRangeChange(range => {
+        bottomChartRef.current.timeScale().subscribeVisibleLogicalRangeChange(range => {
           if (!range) return;
           const mainTimeScale = mainChartRef.current.timeScale();
-          const currentRange = mainTimeScale.getVisibleRange();
+          const currentRange = mainTimeScale.getVisibleLogicalRange();
           if (!currentRange || currentRange.from !== range.from || currentRange.to !== range.to) {
-            mainTimeScale.setVisibleRange(range);
+            mainTimeScale.setVisibleLogicalRange(range);
           }
         });
 
