@@ -49,8 +49,8 @@ export default function App() {
   const [positions, setPositions] = useState([]);
   const [currentPrice, setCurrentPrice] = useState(null);
   
-  // High-frequency refresh intervals (1000ms for ultra-low lag)
-  const refreshInterval = 1000;
+  // High-frequency refresh intervals (1500ms for ultra-low lag)
+  const refreshInterval = 1500;
   
   // Interactivity Dragging State
   const [draggingLine, setDraggingLine] = useState(null); // { type: 'tp' | 'sl', initialPrice: number }
@@ -189,6 +189,10 @@ export default function App() {
       const res = await fetch(`/api/state?accountType=${accountType}&accountId=${account.id}&accNum=${account.accNum || '0'}`, {
         headers: { 'Authorization': `Bearer ${jwtToken}` }
       });
+      if (!res.ok) {
+        console.warn(`Skipped state update due to status: ${res.status}`);
+        return; // Keep existing state on error (e.g. 429)
+      }
       const data = await res.json();
       
       const activeConfig = currentConfig || config;
@@ -223,6 +227,10 @@ export default function App() {
       const res = await fetch(`/api/positions?accountType=${accountType}&accountId=${account.id}&accNum=${account.accNum || '0'}`, {
         headers: { 'Authorization': `Bearer ${jwtToken}` }
       });
+      if (!res.ok) {
+        console.warn(`Skipped positions update due to status: ${res.status}`);
+        return; // Keep existing positions on error (e.g. 429) to prevent blinking
+      }
       const data = await res.json();
       
       const targetInstruments = allInstruments || instruments;
