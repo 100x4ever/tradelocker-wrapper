@@ -902,12 +902,25 @@ export default function App() {
         if (rawBars.length > 0) {
           const calculated = calculateIndicators(rawBars);
           if (calculated) {
-            calculated.candles.forEach(bar => candleSeriesRef.current.update(bar));
-            calculated.vwap.forEach(bar => vwapSeriesRef.current.update(bar));
-            calculated.volume.forEach(bar => volumeSeriesRef.current.update(bar));
-            calculated.stoch14.forEach(bar => stoch14SeriesRef.current.update(bar));
-            calculated.stoch40.forEach(bar => stoch40SeriesRef.current.update(bar));
-            calculated.stoch60.forEach(bar => stoch60SeriesRef.current.update(bar));
+            // Only update the latest bar/candle to prevent lightweight-charts from rejecting out-of-order data
+            if (calculated.candles.length > 0) {
+              candleSeriesRef.current.update(calculated.candles[calculated.candles.length - 1]);
+            }
+            if (calculated.vwap.length > 0) {
+              vwapSeriesRef.current.update(calculated.vwap[calculated.vwap.length - 1]);
+            }
+            if (calculated.volume.length > 0) {
+              volumeSeriesRef.current.update(calculated.volume[calculated.volume.length - 1]);
+            }
+            if (calculated.stoch14.length > 0) {
+              stoch14SeriesRef.current.update(calculated.stoch14[calculated.stoch14.length - 1]);
+            }
+            if (calculated.stoch40.length > 0) {
+              stoch40SeriesRef.current.update(calculated.stoch40[calculated.stoch40.length - 1]);
+            }
+            if (calculated.stoch60.length > 0) {
+              stoch60SeriesRef.current.update(calculated.stoch60[calculated.stoch60.length - 1]);
+            }
             
             const latestClose = calculated.candles[calculated.candles.length - 1].close;
             setCurrentPrice(latestClose);
