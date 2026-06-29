@@ -443,6 +443,42 @@ export default function App() {
     }
   };
 
+  // Add default TP/SL (1% offset) so they can be dragged on the chart
+  const handleAddDefaultTpSl = async (pos) => {
+    if (!selectedAccount || !token) return;
+    
+    // Default to a 1% offset from the entry price
+    const offset = pos.price * 0.01;
+    const tpPrice = pos.side === 'buy' ? pos.price + offset : pos.price - offset;
+    const slPrice = pos.side === 'buy' ? pos.price - offset : pos.price + offset;
+    
+    addLog(`Setting default TP/SL lines for ${pos.symbol}...`);
+    try {
+      const res = await fetch(`/api/positions/${pos.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          accountType,
+          accNum: selectedAccount.accNum,
+          takeProfit: parseFloat(tpPrice.toFixed(5)),
+          stopLoss: parseFloat(slPrice.toFixed(5))
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        addLog('Default TP/SL set! You can now drag the lines on the chart.');
+        fetchPositions(token, selectedAccount);
+      } else {
+        addLog(`Failed to set TP/SL: ${data.details?.errmsg || data.error}`);
+      }
+    } catch (err) {
+      addLog(`Error setting default TP/SL: ${err.message}`);
+    }
+  };
+
   // Indicator Calculations
   const calculateIndicators = (bars) => {
     if (!bars || bars.length === 0) return null;
@@ -1476,10 +1512,17 @@ export default function App() {
                       </span>
                       <span className="font-semibold text-slate-200">{pos.symbol || 'Instrument'}</span>
                       <div className="text-[10px] text-slate-500">Qty: {pos.qty} | Price: {pos.price}</div>
-                      {(pos.takeProfit || pos.stopLoss) && (
+                      {(pos.takeProfit || pos.stopLoss) ? (
                         <div className="text-[9px] text-violet-400">
-                          {pos.takeProfit ? `TP: ${pos.takeProfit}` : ''} {pos.stopLoss ? `| SL: ${pos.stopLoss}` : ''}
+                          {pos.takeProfit ? `TP: ${pos.takeProfit}` : ''} {pos.stopLoss ? ` | SL: ${pos.stopLoss}` : ''}
                         </div>
+                      ) : (
+                        <button 
+                          onClick={() => handleAddDefaultTpSl(pos)}
+                          className="text-[10px] text-indigo-400 hover:text-indigo-300 underline mt-1 block font-semibold cursor-pointer"
+                        >
+                          + Add TP/SL Lines
+                        </button>
                       )}
                     </div>
                     <div className="text-right">
