@@ -944,54 +944,62 @@ export default function App() {
       String(p.tradableInstrumentId) === String(targetId)
     );
 
-    // Clean up old lines
-    if (entryPriceLineRef.current) {
-      candleSeriesRef.current.removePriceLine(entryPriceLineRef.current);
-      entryPriceLineRef.current = null;
-    }
-    if (tpPriceLineRef.current) {
-      candleSeriesRef.current.removePriceLine(tpPriceLineRef.current);
-      tpPriceLineRef.current = null;
-    }
-    if (slPriceLineRef.current) {
-      candleSeriesRef.current.removePriceLine(slPriceLineRef.current);
-      slPriceLineRef.current = null;
-    }
-
     if (activePos) {
       const isLong = activePos.side === 'buy';
-      // 1. Draw Entry Line
-      entryPriceLineRef.current = candleSeriesRef.current.createPriceLine({
+      
+      // 1. Manage Entry Line (Solid)
+      const entryOptions = {
         price: activePos.price,
         color: '#3b82f6', // Blue
         lineWidth: 2,
-        lineStyle: 2, // Dashed
+        lineStyle: 0, // Solid (no blinking)
         title: `${isLong ? 'LONG' : 'SHORT'} Entry: ${activePos.price}`,
         axisLabelVisible: true,
-      });
+      };
+      if (entryPriceLineRef.current) {
+        entryPriceLineRef.current.applyOptions(entryOptions);
+      } else {
+        entryPriceLineRef.current = candleSeriesRef.current.createPriceLine(entryOptions);
+      }
 
-      // 2. Draw Take Profit Line
+      // 2. Manage Take Profit Line
       if (activePos.takeProfit) {
-        tpPriceLineRef.current = candleSeriesRef.current.createPriceLine({
+        const tpOptions = {
           price: activePos.takeProfit,
           color: '#10b981', // Green
           lineWidth: 2,
           lineStyle: 0, // Solid
           title: `TP: ${activePos.takeProfit} (Drag)`,
           axisLabelVisible: true,
-        });
+        };
+        if (tpPriceLineRef.current) {
+          tpPriceLineRef.current.applyOptions(tpOptions);
+        } else {
+          tpPriceLineRef.current = candleSeriesRef.current.createPriceLine(tpOptions);
+        }
+      } else if (tpPriceLineRef.current) {
+        candleSeriesRef.current.removePriceLine(tpPriceLineRef.current);
+        tpPriceLineRef.current = null;
       }
 
-      // 3. Draw Stop Loss Line
+      // 3. Manage Stop Loss Line
       if (activePos.stopLoss) {
-        slPriceLineRef.current = candleSeriesRef.current.createPriceLine({
+        const slOptions = {
           price: activePos.stopLoss,
           color: '#ef4444', // Red
           lineWidth: 2,
           lineStyle: 0, // Solid
           title: `SL: ${activePos.stopLoss} (Drag)`,
           axisLabelVisible: true,
-        });
+        };
+        if (slPriceLineRef.current) {
+          slPriceLineRef.current.applyOptions(slOptions);
+        } else {
+          slPriceLineRef.current = candleSeriesRef.current.createPriceLine(slOptions);
+        }
+      } else if (slPriceLineRef.current) {
+        candleSeriesRef.current.removePriceLine(slPriceLineRef.current);
+        slPriceLineRef.current = null;
       }
 
       // Mark the entry candle
@@ -1008,6 +1016,18 @@ export default function App() {
         ]);
       }
     } else {
+      if (entryPriceLineRef.current) {
+        candleSeriesRef.current.removePriceLine(entryPriceLineRef.current);
+        entryPriceLineRef.current = null;
+      }
+      if (tpPriceLineRef.current) {
+        candleSeriesRef.current.removePriceLine(tpPriceLineRef.current);
+        tpPriceLineRef.current = null;
+      }
+      if (slPriceLineRef.current) {
+        candleSeriesRef.current.removePriceLine(slPriceLineRef.current);
+        slPriceLineRef.current = null;
+      }
       candleSeriesRef.current.setMarkers([]);
     }
   }, [positions, selectedInstrument]);
