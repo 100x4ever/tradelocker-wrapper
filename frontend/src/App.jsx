@@ -33,7 +33,7 @@ export default function App() {
   const [instruments, setInstruments] = useState([]);
   const [selectedInstrument, setSelectedInstrument] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [resolution, setResolution] = useState('5m');
+  const [resolution, setResolution] = useState('15m');
   const [lotSize, setLotSize] = useState('0.01');
   
   // Order Type & Price
@@ -653,9 +653,12 @@ export default function App() {
               borderColor: 'rgba(255, 255, 255, 0.1)',
               width: 80, // Lock price scale width to prevent horizontal dislocation
             },
-            timeScale: { borderColor: 'rgba(255, 255, 255, 0.1)' },
+            timeScale: { 
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              rightOffset: 15, // Lock spacing on the right so candles don't get covered by labels
+            },
             width: mainChartContainerRef.current.clientWidth,
-            height: 400,
+            height: 450, // Increase main chart height to match the screenshot ratio
           });
 
           candleSeriesRef.current = mainChartRef.current.addCandlestickSeries({
@@ -720,9 +723,12 @@ export default function App() {
               borderColor: 'rgba(255, 255, 255, 0.1)',
               width: 80, // Lock price scale width to prevent horizontal dislocation
             },
-            timeScale: { borderColor: 'rgba(255, 255, 255, 0.1)' },
+            timeScale: { 
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              rightOffset: 15, // Sync right spacing
+            },
             width: bottomChartContainerRef.current.clientWidth,
-            height: 180,
+            height: 130, // Decrease bottom indicators chart height
           });
 
           volumeSeriesRef.current = bottomChartRef.current.addHistogramSeries({
@@ -1158,7 +1164,7 @@ export default function App() {
 
               {/* Resolution */}
               <div className="flex items-center gap-1.5">
-                {['1m', '5m', '15m', '1h', '4h', '1d'].map(res => (
+                {['3m', '15m', '1h'].map(res => (
                   <button 
                     key={res} 
                     onClick={() => setResolution(res)}
