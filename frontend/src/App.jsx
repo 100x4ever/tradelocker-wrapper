@@ -614,8 +614,9 @@ export default function App() {
         const routeIdVal = infoRoute ? infoRoute.id : 0;
         const targetInstrumentId = selectedInstrument.tradableInstrumentId || selectedInstrument.id;
         
+        const apiResolution = resolution === '1h' ? '1H' : resolution;
         const res = await fetch(
-          `/api/history?accountType=${accountType}&resolution=${resolution}&from=${fromMs}&to=${toMs}&tradableInstrumentId=${targetInstrumentId}&accNum=${selectedAccount?.accNum || '0'}&routeId=${routeIdVal}`,
+          `/api/history?accountType=${accountType}&resolution=${apiResolution}&from=${fromMs}&to=${toMs}&tradableInstrumentId=${targetInstrumentId}&accNum=${selectedAccount?.accNum || '0'}&routeId=${routeIdVal}`,
           { headers: { 'Authorization': `Bearer ${token}` } }
         );
         const data = await res.json();
@@ -869,8 +870,9 @@ export default function App() {
         const routeIdVal = infoRoute ? infoRoute.id : 0;
         const targetInstrumentId = selectedInstrument.tradableInstrumentId || selectedInstrument.id;
         
+        const apiResolution = resolution === '1h' ? '1H' : resolution;
         const res = await fetch(
-          `/api/history?accountType=${accountType}&resolution=${resolution}&from=${fromMs}&to=${toMs}&tradableInstrumentId=${targetInstrumentId}&accNum=${selectedAccount?.accNum || '0'}&routeId=${routeIdVal}`,
+          `/api/history?accountType=${accountType}&resolution=${apiResolution}&from=${fromMs}&to=${toMs}&tradableInstrumentId=${targetInstrumentId}&accNum=${selectedAccount?.accNum || '0'}&routeId=${routeIdVal}`,
           { headers: { 'Authorization': `Bearer ${token}` } }
         );
         const data = await res.json();
@@ -1164,7 +1166,7 @@ export default function App() {
 
               {/* Resolution */}
               <div className="flex items-center gap-1.5">
-                {['3m', '15m', '1h'].map(res => (
+                {['5m', '15m', '1h'].map(res => (
                   <button 
                     key={res} 
                     onClick={() => setResolution(res)}
