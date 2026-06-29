@@ -1081,7 +1081,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Header */}
+      {/* Header Banner - Now houses the Connection Configuration horizontally */}
       <header className="glass-panel m-4 p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center font-bold text-lg shadow-lg">
@@ -1093,36 +1093,114 @@ export default function App() {
           </div>
         </div>
         
-        {isLoggedIn && accountState && (
-          <div className="flex items-center gap-6">
+        {/* Connection Config (Horizontal Header Layout) */}
+        <div className="flex items-center gap-4 border-l border-r border-slate-800 px-6 py-1 mx-4 flex-1 justify-center">
+          {!isLoggedIn ? (
+            <form onSubmit={handleLogin} className="flex items-center gap-2 flex-wrap">
+              <input 
+                type="email" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-100 focus:outline-none focus:border-violet-500 placeholder-slate-600 w-44" 
+                placeholder="Email"
+              />
+              <input 
+                type="password" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-100 focus:outline-none focus:border-violet-500 placeholder-slate-600 w-28" 
+                placeholder="Password"
+              />
+              <input 
+                type="text" 
+                value={server}
+                onChange={(e) => setServer(e.target.value)}
+                required
+                className="bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-100 focus:outline-none focus:border-violet-500 placeholder-slate-600 w-28" 
+                placeholder="HeroFX-Demo"
+              />
+              <select 
+                value={accountType} 
+                onChange={(e) => setAccountType(e.target.value)}
+                className="bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-100 focus:outline-none focus:border-violet-500"
+              >
+                <option value="demo">Demo</option>
+                <option value="live">Live</option>
+              </select>
+              <button type="submit" className="glow-btn py-1 px-3 text-xs">Connect</button>
+            </form>
+          ) : (
+            <div className="flex items-center gap-3.5">
+              <div className="flex items-center gap-1.5 bg-emerald-950/30 border border-emerald-900/50 px-2.5 py-1 rounded text-[11px] text-emerald-400 font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                CONNECTED
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-400">Account:</span>
+                <select 
+                  className="bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-100 focus:outline-none w-44 font-medium"
+                  value={selectedAccount ? selectedAccount.id : ''}
+                  onChange={(e) => {
+                    const acc = accounts.find(a => String(a.id) === String(e.target.value));
+                    setSelectedAccount(acc);
+                    fetchState(token, acc);
+                    fetchPositions(token, acc);
+                  }}
+                >
+                  {accounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>
+                      #{acc.id} ({acc.currency || 'USD'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button 
+                onClick={() => setIsLoggedIn(false)} 
+                className="btn-secondary py-1 px-2.5 text-xs"
+              >
+                Disconnect
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Account State Indicators */}
+        {isLoggedIn && accountState ? (
+          <div className="flex items-center gap-5">
             <div className="text-right">
-              <span className="text-xs text-slate-400 block">BALANCE</span>
-              <span className="font-semibold text-emerald-400">
+              <span className="text-[10px] text-slate-500 block">BALANCE</span>
+              <span className="font-semibold text-emerald-400 text-sm">
                 ${parseFloat(accountState.balance || accountState.accountBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
             <div className="text-right">
-              <span className="text-xs text-slate-400 block">EQUITY</span>
-              <span className="font-semibold text-indigo-400">
+              <span className="text-[10px] text-slate-500 block">EQUITY</span>
+              <span className="font-semibold text-indigo-400 text-sm">
                 ${parseFloat(accountState.equity || accountState.accountEquity || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
             <div className="text-right">
-              <span className="text-xs text-slate-400 block">UNREALIZED PNL</span>
-              <span className={`font-semibold ${(accountState.openPnL || accountState.unrealizedPnL || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              <span className="text-[10px] text-slate-500 block">PNL</span>
+              <span className={`font-semibold text-sm ${(accountState.openPnL || accountState.unrealizedPnL || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                 ${parseFloat(accountState.openPnL || accountState.unrealizedPnL || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
           </div>
+        ) : (
+          <div className="text-right text-xs text-slate-500 italic">Offline Mode</div>
         )}
       </header>
 
       {/* Grid Layout: Chart on Left (3 cols), Controls & Details on Right (1 col) */}
       <div className="flex-1 px-4 pb-4 grid grid-cols-1 lg:grid-cols-4 gap-4">
         
-        {/* Left Side: Chart Container (Occupies 3 Columns on Large Screens) */}
+        {/* Left Side: Chart Container & Log Window (Occupies 3 Columns on Large Screens) */}
         <div className="lg:col-span-3 flex flex-col gap-4">
-          <div className="glass-panel p-4 flex flex-col flex-1">
+          
+          {/* Chart Panel */}
+          <div className="glass-panel p-4 flex flex-col">
             {/* Chart Toolbar */}
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-800">
               <div className="flex items-center gap-3">
@@ -1196,7 +1274,7 @@ export default function App() {
                   <div className="absolute inset-0 bg-[#0f111a]/85 backdrop-blur-sm flex flex-col items-center justify-center text-center p-6 z-20">
                     <Activity size={48} className="text-indigo-500 mb-4 animate-pulse" />
                     <h3 className="text-lg font-semibold mb-1">Aura Indicator Workspace</h3>
-                    <p className="text-sm text-slate-400 max-w-sm mb-4">Connect to your TradeLocker account using the sidebar to stream live charts with custom indicator calculations.</p>
+                    <p className="text-sm text-slate-400 max-w-sm mb-4">Connect to your TradeLocker account using the top banner to stream live charts with custom indicator calculations.</p>
                   </div>
                 )}
               </div>
@@ -1237,100 +1315,26 @@ export default function App() {
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Right Side: Controls, Positions, Logs (Occupies 1 Column on Large Screens) */}
-        <div className="flex flex-col gap-4">
-          
-          {/* Connection Panel */}
-          <div className="glass-panel p-5 flex flex-col gap-4">
-            <h2 className="text-sm font-semibold tracking-wider text-slate-300 flex items-center gap-2">
-              <Lock size={16} /> CONNECTION CONFIG
-            </h2>
-            
-            {!isLoggedIn ? (
-              <form onSubmit={handleLogin} className="flex flex-col gap-3">
-                <div>
-                  <label className="text-xs text-slate-400 block mb-1">Email</label>
-                  <input 
-                    type="email" 
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100 focus:outline-none focus:border-violet-500" 
-                    placeholder="name@email.com"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-400 block mb-1">Password</label>
-                  <input 
-                    type="password" 
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100 focus:outline-none focus:border-violet-500" 
-                    placeholder="••••••••"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-400 block mb-1">Server</label>
-                  <input 
-                    type="text" 
-                    value={server}
-                    onChange={(e) => setServer(e.target.value)}
-                    required
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100 focus:outline-none focus:border-violet-500" 
-                    placeholder="HeroFX-Demo"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-400 block mb-1">Environment</label>
-                  <select 
-                    value={accountType} 
-                    onChange={(e) => setAccountType(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100 focus:outline-none focus:border-violet-500"
-                  >
-                    <option value="demo">Demo Environment</option>
-                    <option value="live">Live Environment</option>
-                  </select>
-                </div>
-                <button type="submit" className="glow-btn mt-2">Connect Platform</button>
-              </form>
-            ) : (
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between text-sm bg-emerald-950/40 border border-emerald-900/60 p-3 rounded">
-                  <span className="text-emerald-400 font-medium">Logged In</span>
-                  <CheckCircle size={16} className="text-emerald-400" />
-                </div>
-                <div>
-                  <span className="text-xs text-slate-400 block mb-1">Account Select</span>
-                  <select 
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100 focus:outline-none"
-                    value={selectedAccount ? selectedAccount.id : ''}
-                    onChange={(e) => {
-                      const acc = accounts.find(a => String(a.id) === String(e.target.value));
-                      setSelectedAccount(acc);
-                      fetchState(token, acc);
-                      fetchPositions(token, acc);
-                    }}
-                  >
-                    {accounts.map(acc => (
-                      <option key={acc.id} value={acc.id}>
-                        Account #{acc.id} ({acc.currency || 'USD'})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <button 
-                  onClick={() => setIsLoggedIn(false)} 
-                  className="btn-secondary"
-                >
-                  Disconnect
-                </button>
-              </div>
-            )}
+          {/* Log Window (Moved here under the chart panel) */}
+          <div className="glass-panel p-4 flex flex-col h-44">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+              System Log & Feed
+            </h3>
+            <div className="flex-1 bg-slate-950/80 rounded p-2.5 font-mono text-[10px] text-slate-300 overflow-y-auto flex flex-col-reverse gap-1 border border-slate-900">
+              {logs.length === 0 ? (
+                <div className="text-slate-600">Dashboard status active. Connect to start feed...</div>
+              ) : (
+                logs.map((log, idx) => <div key={idx}>{log}</div>)
+              )}
+            </div>
           </div>
 
+        </div>
+
+        {/* Right Side: Controls & Positions (Fully visible next to the chart) */}
+        <div className="flex flex-col gap-4">
+          
           {/* Trade Parameters & Controls */}
           {isLoggedIn && (
             <div className="glass-panel p-5 flex flex-col gap-4">
@@ -1501,7 +1505,7 @@ export default function App() {
           )}
 
           {/* Open Positions */}
-          <div className="glass-panel p-4 flex flex-col max-h-60 overflow-y-auto">
+          <div className="glass-panel p-4 flex flex-col max-h-64 overflow-y-auto">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
               <BarChart3 size={14} /> Open Positions
             </h3>
@@ -1542,20 +1546,6 @@ export default function App() {
                 ))}
               </div>
             )}
-          </div>
-
-          {/* Logs */}
-          <div className="glass-panel p-4 flex flex-col max-h-60">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
-              System Log & Feed
-            </h3>
-            <div className="flex-1 bg-slate-950/80 rounded p-2.5 font-mono text-[10px] text-slate-300 overflow-y-auto flex flex-col-reverse gap-1 border border-slate-900">
-              {logs.length === 0 ? (
-                <div className="text-slate-600">Dashboard status active. Connect to start feed...</div>
-              ) : (
-                logs.map((log, idx) => <div key={idx}>{log}</div>)
-              )}
-            </div>
           </div>
 
         </div>
