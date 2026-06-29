@@ -86,6 +86,12 @@ export default function App() {
   const overboughtSeriesRef = useRef(null);
   const oversoldSeriesRef = useRef(null);
 
+  // Ref to track selected instrument and prevent closure bugs in setInterval
+  const selectedInstrumentRef = useRef(null);
+  useEffect(() => {
+    selectedInstrumentRef.current = selectedInstrument;
+  }, [selectedInstrument]);
+
   // Load saved credentials on mount
   useEffect(() => {
     const savedEmail = localStorage.getItem('tl_email') || '';
@@ -262,14 +268,14 @@ export default function App() {
         
         setPositions(parsedPositions);
 
-        // DEFAULT TO MORE RECENT OPEN POSITION'S ASSET
+        // DEFAULT TO MORE RECENT OPEN POSITION'S ASSET (Only if it's different from the current selection)
         if (parsedPositions.length > 0 && targetInstruments.length > 0) {
           const mostRecentPos = parsedPositions[parsedPositions.length - 1];
           const matchingInstrument = targetInstruments.find(inst => 
             String(inst.tradableInstrumentId) === String(mostRecentPos.tradableInstrumentId) || 
             String(inst.id) === String(mostRecentPos.tradableInstrumentId)
           );
-          if (matchingInstrument && (!selectedInstrument || selectedInstrument.id !== matchingInstrument.id)) {
+          if (matchingInstrument && (!selectedInstrumentRef.current || selectedInstrumentRef.current.id !== matchingInstrument.id)) {
             setSelectedInstrument(matchingInstrument);
             addLog(`Chart defaulted to active position asset: ${matchingInstrument.name}`);
           }
@@ -790,6 +796,12 @@ export default function App() {
         overboughtSeriesRef.current.setData(boundary80);
         oversoldSeriesRef.current.setData(boundary20);
 
+        // DEFAULT ZOOM IN: Show the most recent 80 candles
+        mainChartRef.current.timeScale().setVisibleLogicalRange({
+          from: calculated.candles.length - 80,
+          to: calculated.candles.length + 15, // Include the right offset blank space
+        });
+
         // Sync chart logical ranges with guard to prevent feedback loops (locks bar spacing & zoom)
         mainChartRef.current.timeScale().subscribeVisibleLogicalRangeChange(range => {
           if (!range) return;
@@ -821,10 +833,10 @@ export default function App() {
           }
         });
 
-        addLog(`Rendered charts with Aura Main & Aura Bottom for ${selectedInstrument.name}`);
+        console.log(`Rendered charts with Aura Main & Aura Bottom for ${selectedInstrument.name}`);
 
       } catch (err) {
-        addLog(`Chart rendering failed: ${err.message}`);
+        console.error(`Chart rendering failed: ${err.message}`);
       }
     };
 
