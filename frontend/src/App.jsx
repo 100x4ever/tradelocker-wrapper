@@ -49,8 +49,8 @@ export default function App() {
   const [positions, setPositions] = useState([]);
   const [currentPrice, setCurrentPrice] = useState(null);
   
-  // Refresh Rate (ms)
-  const [refreshInterval, setRefreshInterval] = useState(2000);
+  // High-frequency refresh intervals (1000ms for ultra-low lag)
+  const refreshInterval = 1000;
   
   // Interactivity Dragging State
   const [draggingLine, setDraggingLine] = useState(null); // { type: 'tp' | 'sl', initialPrice: number }
@@ -869,14 +869,14 @@ export default function App() {
     return () => clearInterval(stateTimer);
   }, [selectedAccount, token, refreshInterval, instruments]);
 
-  // CHART LIVE REFRESH LOOP (Every 3 seconds, fetches the latest 20 minutes of bars and calls .update())
+  // CHART LIVE REFRESH LOOP (Every 1 second, fetches the latest 5 minutes of bars and calls .update() for zero-lag)
   useEffect(() => {
     if (!selectedInstrument || !token || !candleSeriesRef.current) return;
 
     const fetchLatestAndUpdate = async () => {
       try {
         const toMs = Date.now();
-        const fromMs = toMs - (60 * 1000 * 20); // Last 20 minutes of bars
+        const fromMs = toMs - (60 * 1000 * 5); // Last 5 minutes of bars (extremely lightweight)
 
         const infoRoute = selectedInstrument.routes?.find(r => r.type === 'INFO');
         const routeIdVal = infoRoute ? infoRoute.id : 0;
@@ -909,7 +909,7 @@ export default function App() {
       }
     };
 
-    const chartLiveTimer = setInterval(fetchLatestAndUpdate, 3000);
+    const chartLiveTimer = setInterval(fetchLatestAndUpdate, 1000);
     return () => clearInterval(chartLiveTimer);
   }, [selectedInstrument, resolution, token, selectedAccount]);
 
@@ -1328,7 +1328,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Log Window (Moved here under the chart panel) */}
+          {/* Log Window */}
           <div className="glass-panel p-4 flex flex-col h-44">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
               System Log & Feed
@@ -1397,24 +1397,6 @@ export default function App() {
                     onChange={(e) => setLotSize(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100 focus:outline-none" 
                   />
-                </div>
-
-                {/* Refresh Speed Selector */}
-                <div>
-                  <label className="text-xs text-slate-400 block mb-1">Data Refresh Rate</label>
-                  <select 
-                    value={refreshInterval} 
-                    onChange={(e) => {
-                      setRefreshInterval(parseInt(e.target.value));
-                      addLog(`Data refresh rate set to ${e.target.value}ms`);
-                    }}
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-100 focus:outline-none focus:border-violet-500"
-                  >
-                    <option value={1500}>Live (1.5s) - Recommended</option>
-                    <option value={3000}>Fast (3.0s)</option>
-                    <option value={5000}>Normal (5.0s)</option>
-                    <option value={10000}>Safe (10.0s)</option>
-                  </select>
                 </div>
 
                 {/* TP / SL Mode Select */}
