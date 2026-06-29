@@ -876,7 +876,16 @@ export default function App() {
     const fetchLatestAndUpdate = async () => {
       try {
         const toMs = Date.now();
-        const fromMs = toMs - (60 * 1000 * 5); // Last 5 minutes of bars (extremely lightweight)
+        // Calculate required history window to ensure stochastics (up to period 60) have enough bars
+        let historyWindowMs = 60 * 1000 * 5; // Default fallback
+        if (resolution === '5m') {
+          historyWindowMs = 60 * 1000 * 5 * 80; // 80 bars = 400 mins (~6.6 hours)
+        } else if (resolution === '15m') {
+          historyWindowMs = 60 * 1000 * 15 * 80; // 80 bars = 1200 mins (20 hours)
+        } else if (resolution === '1h' || resolution === '1H') {
+          historyWindowMs = 60 * 1000 * 60 * 80; // 80 bars = 80 hours (~3.3 days)
+        }
+        const fromMs = toMs - historyWindowMs;
 
         const infoRoute = selectedInstrument.routes?.find(r => r.type === 'INFO');
         const routeIdVal = infoRoute ? infoRoute.id : 0;
