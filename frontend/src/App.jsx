@@ -220,23 +220,43 @@ export default function App() {
 
       if (data && data.d && data.d.positions) {
         const parsedPositions = data.d.positions.map(posArr => {
-          const instId = posArr[1];
+          const mappedPos = {};
+
+          // Dynamic mapping based on positionsConfig from TradeLocker
+          if (config && config.positionsConfig && config.positionsConfig.columns) {
+            config.positionsConfig.columns.forEach((col, idx) => {
+              mappedPos[col.name] = posArr[idx];
+            });
+          } else {
+            // Fallback indices
+            mappedPos.id = posArr[0];
+            mappedPos.tradableInstrumentId = posArr[1];
+            mappedPos.side = posArr[3];
+            mappedPos.qty = posArr[4];
+            mappedPos.price = posArr[5];
+            mappedPos.stopLoss = posArr[6];
+            mappedPos.takeProfit = posArr[7];
+            mappedPos.time = posArr[8];
+            mappedPos.pnl = posArr[9];
+          }
+
+          const instId = mappedPos.tradableInstrumentId;
           const instrumentObj = targetInstruments.find(inst => 
             String(inst.tradableInstrumentId) === String(instId) || String(inst.id) === String(instId)
           );
           const symbolName = instrumentObj ? instrumentObj.name : `Instrument #${instId}`;
 
           return {
-            id: posArr[0],
+            id: mappedPos.id,
             tradableInstrumentId: instId,
             symbol: symbolName,
-            side: posArr[3],
-            qty: posArr[4],
-            price: parseFloat(posArr[5]),
-            stopLoss: posArr[6] ? parseFloat(posArr[6]) : null,
-            takeProfit: posArr[7] ? parseFloat(posArr[7]) : null,
-            time: posArr[8],
-            pnl: posArr[9]
+            side: mappedPos.side,
+            qty: mappedPos.qty,
+            price: parseFloat(mappedPos.price),
+            stopLoss: mappedPos.stopLoss ? parseFloat(mappedPos.stopLoss) : null,
+            takeProfit: mappedPos.takeProfit ? parseFloat(mappedPos.takeProfit) : null,
+            time: mappedPos.time,
+            pnl: mappedPos.pnl
           };
         });
         
@@ -788,7 +808,7 @@ export default function App() {
     return () => clearInterval(stateTimer);
   }, [selectedAccount, token, refreshInterval, instruments]);
 
-  // CHART LIVE REFRESH LOOP (Every 3 seconds, fetches the latest 10 bars and calls .update())
+  // CHART LIVE REFRESH LOOP (Every 3 seconds, fetches the latest 20 minutes of bars and calls .update())
   useEffect(() => {
     if (!selectedInstrument || !token || !candleSeriesRef.current) return;
 
@@ -811,7 +831,6 @@ export default function App() {
         if (rawBars.length > 0) {
           const calculated = calculateIndicators(rawBars);
           if (calculated) {
-            // Smoothly update the last few bars in real time without resetting scroll/zoom position
             calculated.candles.forEach(bar => candleSeriesRef.current.update(bar));
             calculated.vwap.forEach(bar => vwapSeriesRef.current.update(bar));
             calculated.volume.forEach(bar => volumeSeriesRef.current.update(bar));
@@ -1048,9 +1067,131 @@ export default function App() {
         )}
       </header>
 
+      {/* Grid Layout: Chart on Left (3 cols), Controls & Details on Right (1 col) */}
       <div className="flex-1 px-4 pb-4 grid grid-cols-1 lg:grid-cols-4 gap-4">
-        {/* Left Sidebar */}
+        
+        {/* Left Side: Chart Container (Occupies 3 Columns on Large Screens) */}
+        <div className="lg:col-span-3 flex flex-col gap-4">
+          <div className="glass-panel p-4 flex flex-col flex-1">
+            {/* Chart Toolbar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <Layers size={16} className="text-indigo-400" />
+                <span className="font-semibold text-slate-300">Live Indicator Chart</span>
+                
+                {isLoggedIn && (
+                  <div className="relative">
+                    <input 
+                      type="text" 
+                      placeholder="Search pair..." 
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-44"
+                    />
+                    {searchQuery && (
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-slate-950 border border-slate-800 rounded shadow-2xl max-h-60 overflow-y-auto z-55">
+                        {filteredInstruments.map(inst => (
+                          <div 
+                            key={inst.id} 
+                            onClick={() => {
+                              setSelectedInstrument(inst);
+                              setSearchQuery('');
+                            }}
+                            className="p-2 text-xs hover:bg-slate-900 cursor-pointer border-b border-slate-900 text-slate-300"
+                          >
+                            {inst.name}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {selectedInstrument && (
+                  <span className="text-sm font-bold text-violet-400 bg-violet-950/40 border border-violet-900/60 px-2.5 py-0.5 rounded">
+                    {selectedInstrument.name}
+                  </span>
+                )}
+              </div>
+
+              {/* Resolution */}
+              <div className="flex items-center gap-1.5">
+                {['1m', '5m', '15m', '1h', '4h', '1d'].map(res => (
+                  <button 
+                    key={res} 
+                    onClick={() => setResolution(res)}
+                    className={`px-3 py-1 rounded text-xs font-semibold transition-all ${
+                      resolution === res 
+                        ? 'bg-violet-600 text-white' 
+                        : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {res}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Chart Area */}
+            <div className="flex-1 flex flex-col gap-2">
+              <div className="w-full relative bg-[#0f111a] rounded-lg overflow-hidden border border-slate-900">
+                <div 
+                  ref={mainChartContainerRef} 
+                  className="w-full"
+                  onMouseDown={handleChartMouseDown}
+                ></div>
+                <div ref={bottomChartContainerRef} className="w-full border-t border-slate-900"></div>
+
+                {!isLoggedIn && (
+                  <div className="absolute inset-0 bg-[#0f111a]/85 backdrop-blur-sm flex flex-col items-center justify-center text-center p-6 z-20">
+                    <Activity size={48} className="text-indigo-500 mb-4 animate-pulse" />
+                    <h3 className="text-lg font-semibold mb-1">Aura Indicator Workspace</h3>
+                    <p className="text-sm text-slate-400 max-w-sm mb-4">Connect to your TradeLocker account using the sidebar to stream live charts with custom indicator calculations.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Legend */}
+            <div className="flex flex-wrap gap-3 mt-3 text-xs text-slate-400 border-t border-slate-900 pt-3">
+              <div className="indicator-tag">
+                <span className="w-2.5 h-1 bg-white rounded"></span>
+                VWAP
+              </div>
+              <div className="indicator-tag">
+                <span className="w-2.5 h-1 bg-emerald-500 rounded"></span>
+                Session High
+              </div>
+              <div className="indicator-tag">
+                <span className="w-2.5 h-1 bg-red-500 rounded"></span>
+                Session Low
+              </div>
+              <div className="indicator-tag">
+                <span className="w-2.5 h-1 bg-yellow-500 rounded"></span>
+                Fib 0.236
+              </div>
+              <div className="indicator-tag">
+                <span className="w-2.5 h-1 bg-purple-500 rounded"></span>
+                Fib 0.500
+              </div>
+              <div className="indicator-tag">
+                <span className="w-2.5 h-1 bg-blue-500 rounded"></span>
+                Fib 0.618
+              </div>
+              <div className="indicator-tag">
+                <span className="w-2.5 h-1 bg-gradient-to-r from-yellow-500 via-blue-500 to-white rounded"></span>
+                Stochastics (14, 40, 60)
+              </div>
+              <div className="indicator-tag text-indigo-400 font-semibold">
+                <MousePointerClick size={12} /> Click & Drag TP / SL Lines to Modify
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Side: Controls, Positions, Logs (Occupies 1 Column on Large Screens) */}
         <div className="flex flex-col gap-4">
+          
           {/* Connection Panel */}
           <div className="glass-panel p-5 flex flex-col gap-4">
             <h2 className="text-sm font-semibold tracking-wider text-slate-300 flex items-center gap-2">
@@ -1308,179 +1449,58 @@ export default function App() {
               </div>
             </div>
           )}
-        </div>
 
-        {/* Central Pane */}
-        <div className="lg:col-span-3 flex flex-col gap-4">
-          <div className="glass-panel p-4 flex flex-col flex-1">
-            {/* Chart Toolbar */}
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-3">
-                <Layers size={16} className="text-indigo-400" />
-                <span className="font-semibold text-slate-300">Live Indicator Chart</span>
-                
-                {isLoggedIn && (
-                  <div className="relative">
-                    <input 
-                      type="text" 
-                      placeholder="Search pair..." 
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-44"
-                    />
-                    {searchQuery && (
-                      <div className="absolute left-0 right-0 top-full mt-1 bg-slate-950 border border-slate-800 rounded shadow-2xl max-h-60 overflow-y-auto z-55">
-                        {filteredInstruments.map(inst => (
-                          <div 
-                            key={inst.id} 
-                            onClick={() => {
-                              setSelectedInstrument(inst);
-                              setSearchQuery('');
-                            }}
-                            className="p-2 text-xs hover:bg-slate-900 cursor-pointer border-b border-slate-900 text-slate-300"
-                          >
-                            {inst.name}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-                
-                {selectedInstrument && (
-                  <span className="text-sm font-bold text-violet-400 bg-violet-950/40 border border-violet-900/60 px-2.5 py-0.5 rounded">
-                    {selectedInstrument.name}
-                  </span>
-                )}
+          {/* Open Positions */}
+          <div className="glass-panel p-4 flex flex-col max-h-60 overflow-y-auto">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
+              <BarChart3 size={14} /> Open Positions
+            </h3>
+            
+            {positions.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center text-slate-500 text-xs py-6">
+                No active positions open.
               </div>
-
-              {/* Resolution */}
-              <div className="flex items-center gap-1.5">
-                {['1m', '5m', '15m', '1h', '4h', '1d'].map(res => (
-                  <button 
-                    key={res} 
-                    onClick={() => setResolution(res)}
-                    className={`px-3 py-1 rounded text-xs font-semibold transition-all ${
-                      resolution === res 
-                        ? 'bg-violet-600 text-white' 
-                        : 'bg-slate-900 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {res}
-                  </button>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {positions.map(pos => (
+                  <div key={pos.id} className="flex items-center justify-between p-2.5 bg-slate-900/60 rounded border border-slate-800/80 text-xs">
+                    <div>
+                      <span className={`font-bold mr-1.5 uppercase ${pos.side === 'buy' ? 'text-emerald-500' : 'text-red-500'}`}>
+                        {pos.side === 'buy' ? 'LONG' : 'SHORT'}
+                      </span>
+                      <span className="font-semibold text-slate-200">{pos.symbol || 'Instrument'}</span>
+                      <div className="text-[10px] text-slate-500">Qty: {pos.qty} | Price: {pos.price}</div>
+                      {(pos.takeProfit || pos.stopLoss) && (
+                        <div className="text-[9px] text-violet-400">
+                          {pos.takeProfit ? `TP: ${pos.takeProfit}` : ''} {pos.stopLoss ? `| SL: ${pos.stopLoss}` : ''}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <span className={`font-bold ${(pos.pnl || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        ${parseFloat(pos.pnl || 0).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
                 ))}
               </div>
-            </div>
-
-            {/* Chart Area */}
-            <div className="flex-1 flex flex-col gap-2">
-              <div className="w-full relative bg-[#0f111a] rounded-lg overflow-hidden border border-slate-900">
-                <div 
-                  ref={mainChartContainerRef} 
-                  className="w-full"
-                  onMouseDown={handleChartMouseDown}
-                ></div>
-                <div ref={bottomChartContainerRef} className="w-full border-t border-slate-900"></div>
-
-                {!isLoggedIn && (
-                  <div className="absolute inset-0 bg-[#0f111a]/85 backdrop-blur-sm flex flex-col items-center justify-center text-center p-6 z-20">
-                    <Activity size={48} className="text-indigo-500 mb-4 animate-pulse" />
-                    <h3 className="text-lg font-semibold mb-1">Aura Indicator Workspace</h3>
-                    <p className="text-sm text-slate-400 max-w-sm mb-4">Connect to your TradeLocker account using the sidebar to stream live charts with custom indicator calculations.</p>
-                  </div>
-                )}
-              </div>
-            </div>
-            
-            {/* Legend */}
-            <div className="flex flex-wrap gap-3 mt-3 text-xs text-slate-400 border-t border-slate-900 pt-3">
-              <div className="indicator-tag">
-                <span className="w-2.5 h-1 bg-white rounded"></span>
-                VWAP
-              </div>
-              <div className="indicator-tag">
-                <span className="w-2.5 h-1 bg-emerald-500 rounded"></span>
-                Session High
-              </div>
-              <div className="indicator-tag">
-                <span className="w-2.5 h-1 bg-red-500 rounded"></span>
-                Session Low
-              </div>
-              <div className="indicator-tag">
-                <span className="w-2.5 h-1 bg-yellow-500 rounded"></span>
-                Fib 0.236
-              </div>
-              <div className="indicator-tag">
-                <span className="w-2.5 h-1 bg-purple-500 rounded"></span>
-                Fib 0.500
-              </div>
-              <div className="indicator-tag">
-                <span className="w-2.5 h-1 bg-blue-500 rounded"></span>
-                Fib 0.618
-              </div>
-              <div className="indicator-tag">
-                <span className="w-2.5 h-1 bg-gradient-to-r from-yellow-500 via-blue-500 to-white rounded"></span>
-                Stochastics (14, 40, 60)
-              </div>
-              <div className="indicator-tag text-indigo-400 font-semibold">
-                <MousePointerClick size={12} /> Click & Drag TP / SL Lines to Modify
-              </div>
-            </div>
+            )}
           </div>
 
-          {/* Bottom Panels */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Open Positions */}
-            <div className="glass-panel p-4 flex flex-col max-h-64 overflow-y-auto">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
-                <BarChart3 size={14} /> Open Positions
-              </h3>
-              
-              {positions.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center text-slate-500 text-xs py-8">
-                  No active positions open.
-                </div>
+          {/* Logs */}
+          <div className="glass-panel p-4 flex flex-col max-h-60">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
+              System Log & Feed
+            </h3>
+            <div className="flex-1 bg-slate-950/80 rounded p-2.5 font-mono text-[10px] text-slate-300 overflow-y-auto flex flex-col-reverse gap-1 border border-slate-900">
+              {logs.length === 0 ? (
+                <div className="text-slate-600">Dashboard status active. Connect to start feed...</div>
               ) : (
-                <div className="flex flex-col gap-2">
-                  {positions.map(pos => (
-                    <div key={pos.id} className="flex items-center justify-between p-2.5 bg-slate-900/60 rounded border border-slate-800/80 text-xs">
-                      <div>
-                        <span className={`font-bold mr-1.5 uppercase ${pos.side === 'buy' ? 'text-emerald-500' : 'text-red-500'}`}>
-                          {pos.side === 'buy' ? 'LONG' : 'SHORT'}
-                        </span>
-                        <span className="font-semibold text-slate-200">{pos.symbol || 'Instrument'}</span>
-                        <div className="text-[10px] text-slate-500">Qty: {pos.qty} | Price: {pos.price}</div>
-                        {(pos.takeProfit || pos.stopLoss) && (
-                          <div className="text-[9px] text-violet-400">
-                            {pos.takeProfit ? `TP: ${pos.takeProfit}` : ''} {pos.stopLoss ? `| SL: ${pos.stopLoss}` : ''}
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <span className={`font-bold ${(pos.pnl || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          ${parseFloat(pos.pnl || 0).toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                logs.map((log, idx) => <div key={idx}>{log}</div>)
               )}
             </div>
-
-            {/* Logs */}
-            <div className="glass-panel p-4 flex flex-col max-h-64">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
-                System Log & Feed
-              </h3>
-              <div className="flex-1 bg-slate-950/80 rounded p-2.5 font-mono text-[10px] text-slate-300 overflow-y-auto flex flex-col-reverse gap-1 border border-slate-900">
-                {logs.length === 0 ? (
-                  <div className="text-slate-600">Dashboard status active. Connect to start feed...</div>
-                ) : (
-                  logs.map((log, idx) => <div key={idx}>{log}</div>)
-                )}
-              </div>
-            </div>
           </div>
+
         </div>
       </div>
     </div>
